@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      font-size: 14px;
+      color: #333;
+    }
+    h1 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .status-online {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .status-offline {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .status-checking {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .status-online .status-dot {
+      background: #4caf50;
+    }
+    .status-offline .status-dot {
+      background: #f44336;
+    }
+    .status-checking .status-dot {
+      background: #2196f3;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .field {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: #555;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #1a73e8;
+    }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      background: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: #1557b0;
+    }
+    .btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .hint {
+      font-size: 12px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .saved-msg {
+      color: #2e7d32;
+      font-size: 13px;
+      margin-top: 8px;
+      display: none;
+    }
+    .saved-msg.show {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <h1>
+    <span>Gmail to Claude Memory</span>
+  </h1>
+
+  <div id="status" class="status status-checking">
+    <span class="status-dot"></span>
+    <span id="status-text">Checking connection...</span>
+  </div>
+
+  <div class="field">
+    <label for="server-url">Server URL</label>
+    <input type="text" id="server-url" placeholder="http://127.0.0.1:8765">
+    <p class="hint">The local Claude Memory HTTP server</p>
+  </div>
+
+  <button id="save-btn" class="btn">Save Settings</button>
+  <p id="saved-msg" class="saved-msg">Settings saved!</p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

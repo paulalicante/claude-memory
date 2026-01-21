@@ -1,0 +1,13 @@
+# Claude Memory - Dependencies
+# Install with: pip install -r requirements.txt
+
+pystray>=0.19.0      # System tray functionality
+Pillow>=10.0.0       # Image handling (required by pystray)
+pyperclip>=1.8.0     # Cross-platform clipboard access
+keyboard>=0.13.5     # Global hotkey support
+plyer>=2.1.0         # Toast notifications
+pyautogui>=0.9.54    # Mouse/keyboard automation for document copy
+
+# HTTP server for external integrations (browser extensions)
+Flask>=3.0.0         # Lightweight web framework
+flask-cors>=4.0.0    # CORS support for browser extensions

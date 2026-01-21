@@ -1,0 +1,237 @@
+/**
+ * Gmail to Claude Memory - Styles for injected UI
+ */
+
+/* Save Prompt */
+#claude-memory-prompt {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 999999;
+  animation: cm-slide-in 0.3s ease-out;
+}
+
+@keyframes cm-slide-in {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.cm-prompt-content {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  padding: 16px;
+  width: 320px;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  border: 1px solid #e0e0e0;
+}
+
+.cm-prompt-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cm-prompt-icon {
+  font-size: 20px;
+}
+
+.cm-prompt-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #202124;
+}
+
+.cm-prompt-preview {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 13px;
+  color: #5f6368;
+  margin-bottom: 16px;
+  line-height: 1.5;
+  max-height: 80px;
+  overflow: hidden;
+}
+
+.cm-prompt-preview strong {
+  color: #202124;
+}
+
+.cm-prompt-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.cm-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background-color 0.2s;
+}
+
+.cm-btn-save {
+  background: #1a73e8;
+  color: white;
+}
+
+.cm-btn-save:hover {
+  background: #1557b0;
+}
+
+.cm-btn-cancel {
+  background: #f1f3f4;
+  color: #5f6368;
+}
+
+.cm-btn-cancel:hover {
+  background: #e8eaed;
+}
+
+/* Toast Notifications */
+.cm-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 14px;
+  z-index: 9999999;
+  animation: cm-toast-in 0.3s ease-out;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes cm-toast-in {
+  from {
+    transform: translateX(-50%) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+}
+
+.cm-toast-fade {
+  animation: cm-toast-out 0.3s ease-in forwards;
+}
+
+@keyframes cm-toast-out {
+  to {
+    transform: translateX(-50%) translateY(20px);
+    opacity: 0;
+  }
+}
+
+.cm-toast-success {
+  background: #34a853;
+  color: white;
+}
+
+.cm-toast-error {
+  background: #ea4335;
+  color: white;
+}
+
+.cm-toast-info {
+  background: #4285f4;
+  color: white;
+}
+
+/* Google Docs Floating Button */
+#cm-docs-floating-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 999999;
+  animation: cm-slide-in 0.3s ease-out;
+}
+
+.cm-docs-btn-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #ffffff;
+  border-radius: 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.cm-docs-save-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.cm-docs-save-btn:hover {
+  background: #1557b0;
+}
+
+.cm-docs-save-btn:disabled {
+  background: #94c4f8;
+  cursor: wait;
+}
+
+.cm-docs-icon {
+  font-weight: 700;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.cm-docs-label {
+  white-space: nowrap;
+}
+
+.cm-docs-minimize-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f1f3f4;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  color: #5f6368;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.cm-docs-minimize-btn:hover {
+  background: #e8eaed;
+}
+
+/* Minimized state */
+#cm-docs-floating-btn.cm-minimized .cm-docs-btn-content {
+  padding: 4px;
+}
+
+#cm-docs-floating-btn.cm-minimized .cm-docs-save-btn {
+  padding: 10px 12px;
+}
