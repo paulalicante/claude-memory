@@ -78,6 +78,19 @@ def init_database() -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_category ON entries(category)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_session ON entries(session_id)")
 
+    # Add archived column if it doesn't exist (migration)
+    cursor.execute("PRAGMA table_info(entries)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if 'archived' not in columns:
+        cursor.execute("ALTER TABLE entries ADD COLUMN archived INTEGER DEFAULT 0")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_archived ON entries(archived)")
+
+    # Add pdf_path column if it doesn't exist (migration for PDF support)
+    cursor.execute("PRAGMA table_info(entries)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if 'pdf_path' not in columns:
+        cursor.execute("ALTER TABLE entries ADD COLUMN pdf_path TEXT")
+
     # Trusted contacts table - people you've emailed become trusted senders
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS trusted_contacts (
@@ -200,6 +213,7 @@ def add_entry(
     category: Optional[str] = None,
     tags: Optional[str] = None,
     source_conversation: Optional[str] = None,
+    pdf_path: Optional[str] = None,
 ) -> int:
     """
     Add a new entry to the database.
@@ -213,10 +227,10 @@ def add_entry(
 
     cursor.execute(
         """
-        INSERT INTO entries (session_id, date, category, tags, title, content, source_conversation)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO entries (session_id, date, category, tags, title, content, source_conversation, pdf_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (session_id, today, category, tags, title, content, source_conversation),
+        (session_id, today, category, tags, title, content, source_conversation, pdf_path),
     )
 
     entry_id = cursor.lastrowid

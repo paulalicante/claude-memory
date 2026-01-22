@@ -4,12 +4,20 @@ Built with tkinter for lightweight, no-dependency UI.
 """
 
 import tkinter as tk
-from tkinter import ttk, scrolledtext
-from typing import Optional
+from tkinter import ttk, scrolledtext, filedialog
+from typing import Optional, List
 
 from . import constants
 from .database import search_entries, get_categories, get_entry_by_id, get_recent_entries, delete_entry, add_entry
 from .ai_query import summarize_search_results, NoAPIKeyError, AIQueryError
+from .pdf_handler import (
+    is_pdf_support_available, import_pdf, render_all_pages,
+    get_pdf_page_count, HAS_PIL
+)
+
+# Import PIL for PDF display
+if HAS_PIL:
+    from PIL import ImageTk
 
 
 class SearchWindow:
@@ -36,6 +44,16 @@ class SearchWindow:
         # Auto-refresh state
         self._auto_refresh_job = None
         self._last_entry_id = 0  # Track newest entry to detect changes
+
+        # Multi-select state
+        self._multi_select_var: Optional[tk.BooleanVar] = None
+        self._delete_selected_btn: Optional[ttk.Button] = None
+        self._remove_duplicates_btn: Optional[ttk.Button] = None
+
+        # PDF viewer state
+        self._pdf_canvas: Optional[tk.Canvas] = None
+        self._pdf_images: List = []  # Store PhotoImage references to prevent garbage collection
+        self._pdf_frame: Optional[tk.Frame] = None
 
     def _create_window(self) -> None:
         """Create the search window."""
@@ -101,6 +119,11 @@ class SearchWindow:
         add_btn = ttk.Button(frame, text="+ Add", command=self._show_quick_add)
         add_btn.grid(row=0, column=6, padx=(10, 0))
 
+        # Import PDF button
+        if is_pdf_support_available():
+            pdf_btn = ttk.Button(frame, text="Import PDF", command=self._import_pdf)
+            pdf_btn.grid(row=0, column=7, padx=(5, 0))
+
     def _create_filters(self) -> None:
         """Create the filter dropdowns."""
         frame = ttk.Frame(self._root, padding="10 5 10 5")
@@ -131,6 +154,33 @@ class SearchWindow:
         )
         date_combo.pack(side=tk.LEFT)
         date_combo.bind("<<ComboboxSelected>>", lambda e: self._do_search())
+
+        # Separator
+        ttk.Separator(frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=15)
+
+        # Multi-select checkbox
+        self._multi_select_var = tk.BooleanVar(value=False)
+        multi_check = ttk.Checkbutton(
+            frame,
+            text="Multi-Select",
+            variable=self._multi_select_var,
+            command=self._toggle_multi_select
+        )
+        multi_check.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Delete Selected button (hidden until multi-select enabled)
+        self._delete_selected_btn = ttk.Button(
+            frame, text="Delete Selected", command=self._delete_multiple
+        )
+        self._delete_selected_btn.pack(side=tk.LEFT)
+        self._delete_selected_btn.pack_forget()  # Hide initially
+
+        # Remove Duplicates button (hidden until multi-select enabled)
+        self._remove_duplicates_btn = ttk.Button(
+            frame, text="Remove Duplicates", command=self._remove_duplicates
+        )
+        self._remove_duplicates_btn.pack(side=tk.LEFT, padx=(5, 0))
+        self._remove_duplicates_btn.pack_forget()  # Hide initially
 
         # Results count label
         self._count_label = ttk.Label(frame, text="")
@@ -192,7 +242,7 @@ class SearchWindow:
         self._delete_btn.grid(row=0, column=1, sticky="e", padx=(10, 0))
         self._delete_btn.grid_remove()  # Hide initially
 
-        # Detail text area
+        # Detail text area (for non-PDF entries)
         self._detail_text = scrolledtext.ScrolledText(
             right_frame,
             font=("Consolas", 10),
@@ -200,6 +250,40 @@ class SearchWindow:
             state=tk.DISABLED,
         )
         self._detail_text.grid(row=1, column=0, sticky="nsew")
+
+        # PDF viewer frame (hidden by default, shown for PDF entries)
+        self._pdf_frame = ttk.Frame(right_frame)
+        # Don't grid it yet - it will be shown when needed
+
+        # Create canvas with scrollbar for PDF pages
+        self._pdf_canvas = tk.Canvas(self._pdf_frame, bg="gray")
+        pdf_scrollbar = ttk.Scrollbar(self._pdf_frame, orient=tk.VERTICAL, command=self._pdf_canvas.yview)
+        self._pdf_canvas.configure(yscrollcommand=pdf_scrollbar.set)
+
+        self._pdf_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        pdf_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Inner frame to hold PDF page images
+        self._pdf_inner_frame = ttk.Frame(self._pdf_canvas)
+        self._pdf_canvas_window = self._pdf_canvas.create_window((0, 0), window=self._pdf_inner_frame, anchor="nw")
+
+        # Bind mouse wheel for scrolling
+        def _on_mousewheel(event):
+            self._pdf_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        self._pdf_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        # Update scroll region when inner frame changes
+        def _configure_scroll(event):
+            self._pdf_canvas.configure(scrollregion=self._pdf_canvas.bbox("all"))
+
+        self._pdf_inner_frame.bind("<Configure>", _configure_scroll)
+
+        # Resize canvas window when canvas is resized
+        def _configure_canvas(event):
+            self._pdf_canvas.itemconfig(self._pdf_canvas_window, width=event.width)
+
+        self._pdf_canvas.bind("<Configure>", _configure_canvas)
 
     def _refresh_categories(self) -> None:
         """Refresh the category dropdown with current categories."""
@@ -234,7 +318,7 @@ class SearchWindow:
 
     def _check_for_updates(self) -> None:
         """Check if new entries exist and refresh if needed."""
-        if not self._root or not self._root.winfo_viewable():
+        if not self._root or not self._root.winfo_exists():
             return
 
         try:
@@ -382,6 +466,12 @@ class SearchWindow:
         if not selection:
             return
 
+        # In multi-select mode, just update count, don't show detail
+        if self._multi_select_var and self._multi_select_var.get():
+            count = len(selection)
+            self._count_label.config(text=f"{count} selected")
+            return
+
         index = selection[0]
         if index < len(self._results):
             entry = self._results[index]
@@ -404,10 +494,25 @@ class SearchWindow:
             meta_parts.append(f"Tags: {entry['tags']}")
         if entry.get("session_id"):
             meta_parts.append(f"Session: {entry['session_id']}")
+        if entry.get("pdf_path"):
+            page_count = get_pdf_page_count(entry['pdf_path'])
+            meta_parts.append(f"PDF: {page_count} pages")
         self._meta_label.config(text=" | ".join(meta_parts))
 
         # Show delete button
         self._delete_btn.grid()
+
+        # Check if this is a PDF entry
+        if entry.get("pdf_path") and is_pdf_support_available():
+            self._show_pdf_viewer(entry)
+        else:
+            self._show_text_detail(entry)
+
+    def _show_text_detail(self, entry: dict) -> None:
+        """Show text content in the detail pane."""
+        # Hide PDF viewer, show text
+        self._pdf_frame.grid_remove()
+        self._detail_text.grid(row=1, column=0, sticky="nsew")
 
         # Update detail text
         self._detail_text.config(state=tk.NORMAL)
@@ -417,14 +522,79 @@ class SearchWindow:
         self._detail_text.insert(tk.END, entry["content"])
         self._detail_text.config(state=tk.DISABLED)
 
+    def _show_pdf_viewer(self, entry: dict) -> None:
+        """Show PDF pages in the detail pane."""
+        import os
+
+        pdf_path = entry.get("pdf_path")
+        if not pdf_path or not os.path.exists(pdf_path):
+            # PDF file not found, fall back to text
+            self._show_text_detail(entry)
+            return
+
+        # Hide text, show PDF viewer
+        self._detail_text.grid_remove()
+        self._pdf_frame.grid(row=1, column=0, sticky="nsew")
+
+        # Clear previous PDF images
+        for widget in self._pdf_inner_frame.winfo_children():
+            widget.destroy()
+        self._pdf_images.clear()
+
+        # Render PDF pages
+        try:
+            images = render_all_pages(pdf_path, zoom=1.2)
+
+            if not images:
+                # No pages rendered, show text instead
+                self._show_text_detail(entry)
+                return
+
+            # Convert PIL images to PhotoImage and display
+            for i, pil_image in enumerate(images):
+                # Convert to PhotoImage
+                photo = ImageTk.PhotoImage(pil_image)
+                self._pdf_images.append(photo)  # Keep reference to prevent garbage collection
+
+                # Create label to display the image
+                page_label = ttk.Label(self._pdf_inner_frame, image=photo)
+                page_label.pack(pady=5)
+
+                # Add page number label
+                page_num_label = ttk.Label(
+                    self._pdf_inner_frame,
+                    text=f"Page {i + 1} of {len(images)}",
+                    font=("Segoe UI", 9),
+                    foreground="gray"
+                )
+                page_num_label.pack(pady=(0, 10))
+
+            # Scroll to top
+            self._pdf_canvas.yview_moveto(0)
+
+        except Exception as e:
+            print(f"Error rendering PDF: {e}")
+            self._show_text_detail(entry)
+
     def _clear_detail(self) -> None:
         """Clear the detail pane."""
         self._selected_entry = None
         self._meta_label.config(text="")
         self._delete_btn.grid_remove()  # Hide delete button
+
+        # Clear text area
         self._detail_text.config(state=tk.NORMAL)
         self._detail_text.delete("1.0", tk.END)
         self._detail_text.config(state=tk.DISABLED)
+
+        # Hide PDF viewer and clear images
+        self._pdf_frame.grid_remove()
+        for widget in self._pdf_inner_frame.winfo_children():
+            widget.destroy()
+        self._pdf_images.clear()
+
+        # Show text area by default
+        self._detail_text.grid(row=1, column=0, sticky="nsew")
 
     def _delete_selected(self) -> None:
         """Delete the currently selected entry after confirmation."""
@@ -446,6 +616,159 @@ class SearchWindow:
             if delete_entry(entry_id):
                 self._clear_detail()
                 self._do_search()  # Refresh the list
+
+    def _toggle_multi_select(self) -> None:
+        """Toggle between single and multi-select mode."""
+        if self._multi_select_var.get():
+            # Enable multi-select
+            self._results_listbox.config(selectmode=tk.EXTENDED)
+            self._delete_selected_btn.pack(side=tk.LEFT)
+            self._remove_duplicates_btn.pack(side=tk.LEFT, padx=(5, 0))
+            # Hide the single-entry delete button
+            self._delete_btn.grid_remove()
+            self._clear_detail()
+        else:
+            # Disable multi-select
+            self._results_listbox.config(selectmode=tk.SINGLE)
+            self._delete_selected_btn.pack_forget()
+            self._remove_duplicates_btn.pack_forget()
+            # Clear selection
+            self._results_listbox.selection_clear(0, tk.END)
+
+    def _delete_multiple(self) -> None:
+        """Delete all selected entries after confirmation."""
+        selection = self._results_listbox.curselection()
+        if not selection:
+            return
+
+        # Get selected entries
+        selected_entries = [self._results[i] for i in selection]
+        count = len(selected_entries)
+
+        # Confirmation dialog
+        from tkinter import messagebox
+        confirm = messagebox.askyesno(
+            "Delete Entries",
+            f"Delete {count} selected entries?\n\nThis cannot be undone.",
+            parent=self._root
+        )
+
+        if confirm:
+            deleted = 0
+            for entry in selected_entries:
+                if delete_entry(entry['id']):
+                    deleted += 1
+
+            # Refresh the list
+            self._do_search()
+
+            # Show result
+            if deleted == count:
+                messagebox.showinfo("Deleted", f"Deleted {deleted} entries.", parent=self._root)
+            else:
+                messagebox.showwarning(
+                    "Partial Delete",
+                    f"Deleted {deleted} of {count} entries.",
+                    parent=self._root
+                )
+
+    def _remove_duplicates(self) -> None:
+        """Merge selected entries into one clean entry and delete duplicates."""
+        selection = self._results_listbox.curselection()
+        if len(selection) < 2:
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "Select Multiple",
+                "Please select at least 2 entries to remove duplicates.",
+                parent=self._root
+            )
+            return
+
+        # Get selected entries sorted by date (oldest first)
+        selected_entries = [self._results[i] for i in selection]
+        selected_entries.sort(key=lambda e: e.get('created_at', ''))
+
+        # Confirmation dialog
+        from tkinter import messagebox
+        confirm = messagebox.askyesno(
+            "Remove Duplicates",
+            f"Merge {len(selected_entries)} entries into one clean entry?\n\n"
+            f"This will:\n"
+            f"1. Extract unique content from all selected entries\n"
+            f"2. Create a new merged entry\n"
+            f"3. Delete the {len(selected_entries)} selected entries\n\n"
+            f"This cannot be undone.",
+            parent=self._root
+        )
+
+        if not confirm:
+            return
+
+        # Merge content - remove duplicates by splitting into lines
+        all_content = []
+        for entry in selected_entries:
+            content = entry.get('content', '').strip()
+            if content:
+                all_content.append(content)
+
+        # Deduplicate by lines
+        seen_lines = set()
+        unique_lines = []
+        for content_block in all_content:
+            for line in content_block.split('\n'):
+                line_stripped = line.strip()
+                if line_stripped and line_stripped not in seen_lines:
+                    seen_lines.add(line_stripped)
+                    unique_lines.append(line)
+
+        merged_content = '\n'.join(unique_lines)
+
+        # Use the first entry's title (or create a new one)
+        first_entry = selected_entries[0]
+        merged_title = first_entry.get('title', 'Merged Entry')
+        if not merged_title.startswith('[Merged]'):
+            merged_title = f"[Merged] {merged_title}"
+
+        # Use the first entry's category and tags
+        category = first_entry.get('category', 'note')
+        tags = first_entry.get('tags', '')
+        if tags and 'merged' not in tags:
+            tags = f"{tags}, merged"
+        else:
+            tags = 'merged'
+
+        # Create new merged entry
+        from claude_memory.database import add_entry
+        new_entry_id = add_entry(
+            title=merged_title,
+            content=merged_content,
+            category=category,
+            tags=tags
+        )
+
+        if not new_entry_id:
+            messagebox.showerror(
+                "Error",
+                "Failed to create merged entry.",
+                parent=self._root
+            )
+            return
+
+        # Delete old entries
+        deleted = 0
+        for entry in selected_entries:
+            if delete_entry(entry['id']):
+                deleted += 1
+
+        # Refresh and show result
+        self._do_search()
+
+        messagebox.showinfo(
+            "Success",
+            f"Created merged entry with {len(unique_lines)} unique lines.\n"
+            f"Deleted {deleted} duplicate entries.",
+            parent=self._root
+        )
 
     def _on_ctrl_v(self, event) -> None:
         """Handle Ctrl+V - show quick add dialog with clipboard content."""
@@ -549,6 +872,158 @@ class SearchWindow:
         # Focus title and bind Enter to save
         title_entry.focus()
         dialog.bind("<Control-Return>", lambda e: save_and_close())
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
+
+    def _import_pdf(self) -> None:
+        """Import a PDF file and create a memory entry for it."""
+        if not is_pdf_support_available():
+            from tkinter import messagebox
+            messagebox.showerror(
+                "PDF Support Not Available",
+                "PDF support requires PyMuPDF and Pillow.\n\n"
+                "Install with: pip install PyMuPDF Pillow",
+                parent=self._root
+            )
+            return
+
+        # Open file dialog
+        file_path = filedialog.askopenfilename(
+            title="Import PDF",
+            filetypes=[("PDF Files", "*.pdf"), ("All Files", "*.*")],
+            parent=self._root
+        )
+
+        if not file_path:
+            return  # User cancelled
+
+        # Show progress dialog
+        progress = tk.Toplevel(self._root)
+        progress.title("Importing PDF...")
+        progress.geometry("300x80")
+        progress.transient(self._root)
+        progress.grab_set()
+
+        # Center on parent
+        progress.update_idletasks()
+        x = self._root.winfo_x() + (self._root.winfo_width() - 300) // 2
+        y = self._root.winfo_y() + (self._root.winfo_height() - 80) // 2
+        progress.geometry(f"+{x}+{y}")
+
+        ttk.Label(progress, text="Importing PDF and extracting text...", padding=20).pack()
+        progress.update()
+
+        try:
+            # Import the PDF
+            stored_path, extracted_text, title = import_pdf(file_path)
+
+            progress.destroy()
+
+            if stored_path is None:
+                from tkinter import messagebox
+                messagebox.showerror("Import Failed", title, parent=self._root)  # title contains error message
+                return
+
+            # Show dialog to customize title/category before saving
+            self._show_pdf_save_dialog(stored_path, extracted_text, title)
+
+        except Exception as e:
+            progress.destroy()
+            from tkinter import messagebox
+            messagebox.showerror("Import Error", f"Failed to import PDF:\n{e}", parent=self._root)
+
+    def _show_pdf_save_dialog(self, pdf_path: str, extracted_text: str, default_title: str) -> None:
+        """Show dialog to customize PDF entry before saving."""
+        dialog = tk.Toplevel(self._root)
+        dialog.title("Save PDF")
+        dialog.geometry("500x300")
+        dialog.transient(self._root)
+        dialog.grab_set()
+
+        # Center on parent
+        dialog.update_idletasks()
+        x = self._root.winfo_x() + (self._root.winfo_width() - 500) // 2
+        y = self._root.winfo_y() + (self._root.winfo_height() - 300) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+        # Title input
+        title_frame = ttk.Frame(dialog, padding="10 10 10 5")
+        title_frame.pack(fill=tk.X)
+        ttk.Label(title_frame, text="Title:").pack(side=tk.LEFT)
+        title_var = tk.StringVar(value=default_title)
+        title_entry = ttk.Entry(title_frame, textvariable=title_var, font=("Segoe UI", 11))
+        title_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
+
+        # Category input
+        cat_frame = ttk.Frame(dialog, padding="10 5 10 5")
+        cat_frame.pack(fill=tk.X)
+        ttk.Label(cat_frame, text="Category:").pack(side=tk.LEFT)
+        cat_var = tk.StringVar(value="document")
+        cat_entry = ttk.Combobox(
+            cat_frame,
+            textvariable=cat_var,
+            values=["document", "reference", "research", "manual", "report"],
+            width=15
+        )
+        cat_entry.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Tags input
+        tags_frame = ttk.Frame(dialog, padding="10 5 10 5")
+        tags_frame.pack(fill=tk.X)
+        ttk.Label(tags_frame, text="Tags:").pack(side=tk.LEFT)
+        tags_var = tk.StringVar(value="pdf")
+        tags_entry = ttk.Entry(tags_frame, textvariable=tags_var, width=30)
+        tags_entry.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Preview of extracted text
+        preview_frame = ttk.LabelFrame(dialog, text="Extracted Text Preview", padding="10")
+        preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        preview_text = scrolledtext.ScrolledText(
+            preview_frame,
+            font=("Consolas", 9),
+            wrap=tk.WORD,
+            height=8,
+            state=tk.NORMAL
+        )
+        preview_text.pack(fill=tk.BOTH, expand=True)
+        preview_text.insert("1.0", extracted_text[:2000] + ("..." if len(extracted_text) > 2000 else ""))
+        preview_text.config(state=tk.DISABLED)
+
+        # Buttons
+        btn_frame = ttk.Frame(dialog, padding="10")
+        btn_frame.pack(fill=tk.X)
+
+        def save_and_close():
+            title = title_var.get().strip() or default_title
+            category = cat_var.get().strip() or "document"
+            tags = tags_var.get().strip() or "pdf"
+
+            # Save to database with PDF path
+            entry_id = add_entry(
+                title=title,
+                content=extracted_text,
+                category=category,
+                tags=tags,
+                pdf_path=pdf_path
+            )
+
+            dialog.destroy()
+            self._refresh()  # Refresh the list
+
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "PDF Imported",
+                f"PDF saved as entry #{entry_id}\n\nClick on it to view the formatted PDF.",
+                parent=self._root
+            )
+
+        ttk.Button(btn_frame, text="Save", command=save_and_close).pack(side=tk.RIGHT, padx=(5, 0))
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT)
+
+        # Focus title
+        title_entry.focus()
+        title_entry.select_range(0, tk.END)
+        dialog.bind("<Return>", lambda e: save_and_close())
         dialog.bind("<Escape>", lambda e: dialog.destroy())
 
     def show(self) -> None:

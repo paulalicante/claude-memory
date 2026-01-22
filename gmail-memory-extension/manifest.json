@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Claude Memory Saver",
-  "version": "1.3.1",
-  "description": "Save Gmail, Google Docs, and Claude.ai conversations to Claude Memory. Auto-saves incoming emails from trusted contacts.",
+  "version": "1.5.0",
+  "description": "Save Gmail, Google Docs, Claude.ai, TikTok comments, and WhatsApp messages to Claude Memory.",
   "permissions": [
     "storage",
     "clipboardRead"
@@ -27,6 +27,16 @@
     {
       "matches": ["https://claude.ai/*"],
       "js": ["content-claude.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.tiktok.com/*", "https://tiktok.com/*"],
+      "js": ["content-tiktok.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content-whatsapp.js"],
       "run_at": "document_idle"
     }
   ],

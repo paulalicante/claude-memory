@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude-memory__get_memory_stats",
+      "mcp__claude-memory__get_recent_memories",
+      "mcp__claude-memory__add_memory",
+      "Bash(timeout:*)",
+      "Bash(start \"\" pythonw \"g:\\\\My Drive\\\\ClaudeMemory\\\\run.pyw\")",
+      "Bash(git init:*)",
+      "Bash(gh repo create:*)"
+    ]
+  }
+}

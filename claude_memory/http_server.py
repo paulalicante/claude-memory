@@ -82,8 +82,9 @@ def add_memory():
             source_conversation=source_conversation,
         )
 
-        # Show notification
-        notify_saved(title)
+        # Skip toast notification for extension saves - they handle their own feedback
+        # (and WhatsApp saves silently to avoid spam)
+        # notify_saved(title)
 
         return jsonify({
             "success": True,

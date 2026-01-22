@@ -31,13 +31,14 @@ def get_connection() -> sqlite3.Connection:
 
 
 @mcp.tool()
-def search_memories(query: str, limit: int = 20) -> list[dict]:
+def search_memories(query: str, limit: int = 20, include_archived: bool = False) -> list[dict]:
     """
     Search memories using full-text search.
 
     Args:
         query: Search terms to find in title, content, or tags
         limit: Maximum number of results (default 20)
+        include_archived: If True, include archived memories (default False)
 
     Returns:
         List of matching memory entries with id, title, category, tags, date, and content
@@ -45,19 +46,22 @@ def search_memories(query: str, limit: int = 20) -> list[dict]:
     conn = get_connection()
     cursor = conn.cursor()
 
+    archived_filter = "" if include_archived else "AND (e.archived IS NULL OR e.archived = 0)"
+
     if query.strip():
-        cursor.execute("""
-            SELECT e.id, e.title, e.category, e.tags, e.date, e.content, e.session_id
+        cursor.execute(f"""
+            SELECT e.id, e.title, e.category, e.tags, e.date, e.content, e.session_id, e.archived
             FROM entries e
             JOIN entries_fts fts ON e.id = fts.rowid
-            WHERE entries_fts MATCH ?
+            WHERE entries_fts MATCH ? {archived_filter}
             ORDER BY e.timestamp DESC
             LIMIT ?
         """, (query, limit))
     else:
-        cursor.execute("""
-            SELECT id, title, category, tags, date, content, session_id
-            FROM entries
+        cursor.execute(f"""
+            SELECT id, title, category, tags, date, content, session_id, archived
+            FROM entries e
+            WHERE 1=1 {archived_filter}
             ORDER BY timestamp DESC
             LIMIT ?
         """, (limit,))
@@ -90,12 +94,13 @@ def get_memory(entry_id: int) -> dict | None:
 
 
 @mcp.tool()
-def get_recent_memories(limit: int = 10) -> list[dict]:
+def get_recent_memories(limit: int = 10, include_archived: bool = False) -> list[dict]:
     """
     Get the most recent memory entries.
 
     Args:
         limit: Number of entries to return (default 10)
+        include_archived: If True, include archived memories (default False)
 
     Returns:
         List of recent memory entries
@@ -103,9 +108,12 @@ def get_recent_memories(limit: int = 10) -> list[dict]:
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT id, title, category, tags, date, content, session_id
+    archived_filter = "" if include_archived else "WHERE (archived IS NULL OR archived = 0)"
+
+    cursor.execute(f"""
+        SELECT id, title, category, tags, date, content, session_id, archived
         FROM entries
+        {archived_filter}
         ORDER BY timestamp DESC
         LIMIT ?
     """, (limit,))
@@ -117,13 +125,14 @@ def get_recent_memories(limit: int = 10) -> list[dict]:
 
 
 @mcp.tool()
-def get_memories_by_category(category: str, limit: int = 20) -> list[dict]:
+def get_memories_by_category(category: str, limit: int = 20, include_archived: bool = False) -> list[dict]:
     """
     Get memories filtered by category.
 
     Args:
         category: The category to filter by
         limit: Maximum results (default 20)
+        include_archived: If True, include archived memories (default False)
 
     Returns:
         List of memories in the specified category
@@ -131,10 +140,12 @@ def get_memories_by_category(category: str, limit: int = 20) -> list[dict]:
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT id, title, category, tags, date, content, session_id
+    archived_filter = "AND (archived IS NULL OR archived = 0)" if not include_archived else ""
+
+    cursor.execute(f"""
+        SELECT id, title, category, tags, date, content, session_id, archived
         FROM entries
-        WHERE category = ?
+        WHERE category = ? {archived_filter}
         ORDER BY timestamp DESC
         LIMIT ?
     """, (category, limit))
@@ -205,6 +216,99 @@ def get_memory_stats() -> dict:
         "entries_this_month": this_month,
         "category_count": categories,
     }
+
+
+@mcp.tool()
+def archive_memory(entry_id: int) -> dict:
+    """
+    Archive a memory so it doesn't appear in regular searches.
+    Archived memories can still be accessed with include_archived=True.
+
+    Args:
+        entry_id: The ID of the memory to archive
+
+    Returns:
+        Status message with the archived entry's title
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Get the entry title first
+    cursor.execute("SELECT title FROM entries WHERE id = ?", (entry_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return {"success": False, "message": f"Memory with ID {entry_id} not found"}
+
+    title = row["title"]
+
+    # Archive it
+    cursor.execute("UPDATE entries SET archived = 1 WHERE id = ?", (entry_id,))
+    conn.commit()
+    conn.close()
+
+    return {"success": True, "message": f"Archived: {title}", "id": entry_id, "title": title}
+
+
+@mcp.tool()
+def unarchive_memory(entry_id: int) -> dict:
+    """
+    Unarchive a memory so it appears in regular searches again.
+
+    Args:
+        entry_id: The ID of the memory to unarchive
+
+    Returns:
+        Status message with the unarchived entry's title
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Get the entry title first
+    cursor.execute("SELECT title FROM entries WHERE id = ?", (entry_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return {"success": False, "message": f"Memory with ID {entry_id} not found"}
+
+    title = row["title"]
+
+    # Unarchive it
+    cursor.execute("UPDATE entries SET archived = 0 WHERE id = ?", (entry_id,))
+    conn.commit()
+    conn.close()
+
+    return {"success": True, "message": f"Unarchived: {title}", "id": entry_id, "title": title}
+
+
+@mcp.tool()
+def get_archived_memories(limit: int = 50) -> list[dict]:
+    """
+    Get all archived memories.
+
+    Args:
+        limit: Maximum number of results (default 50)
+
+    Returns:
+        List of archived memory entries
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT id, title, category, tags, date, content, session_id, archived
+        FROM entries
+        WHERE archived = 1
+        ORDER BY timestamp DESC
+        LIMIT ?
+    """, (limit,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [dict(row) for row in rows]
 
 
 @mcp.tool()

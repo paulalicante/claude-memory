@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "claude-memory": {
+      "command": "python",
+      "args": ["G:\\My Drive\\ClaudeMemory\\mcp_server.py"]
+    }
+  }
+}
