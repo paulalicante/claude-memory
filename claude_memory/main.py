@@ -166,14 +166,24 @@ class ClaudeMemoryApp:
                 self._on_hotkey,
                 suppress=True,
             )
+            print(f"Registered hotkey: {self._config.hotkey}")
         except Exception as e:
             print(f"Warning: Could not register hotkey: {e}")
 
     def _on_hotkey(self) -> None:
         """Handle global hotkey press."""
-        if self._search_window and self._root:
-            # Schedule on tkinter's thread
-            self._root.after(0, self._search_window.show)
+        try:
+            if self._search_window and self._root:
+                # Schedule on tkinter's thread
+                self._root.after(0, self._search_window.show)
+        except Exception as e:
+            print(f"Error in hotkey handler: {e}")
+            # Try to re-register the hotkey
+            try:
+                keyboard.unhook_all_hotkeys()
+                self._setup_hotkey()
+            except:
+                pass
 
     def _on_entry_saved(self, entry: dict) -> None:
         """Callback when an entry is saved."""
@@ -243,6 +253,27 @@ class ClaudeMemoryApp:
         )
         self._tray.run()
 
+    def _watchdog(self) -> None:
+        """Watchdog timer to check app health and restart components if needed."""
+        while self._running:
+            try:
+                import time
+                time.sleep(30)  # Check every 30 seconds
+
+                # Check if keyboard hook is still active
+                try:
+                    # If this succeeds, hooks are working
+                    keyboard.is_pressed('shift')
+                except:
+                    print("Keyboard hook lost, attempting to re-register...")
+                    try:
+                        keyboard.unhook_all_hotkeys()
+                        self._setup_hotkey()
+                    except Exception as e:
+                        print(f"Failed to restore keyboard hook: {e}")
+            except Exception as e:
+                print(f"Watchdog error: {e}")
+
     def run(self) -> None:
         """Run the application."""
         self._running = True
@@ -272,6 +303,10 @@ class ClaudeMemoryApp:
         # Start clipboard watcher
         self._watcher = ClipboardWatcher(on_save=self._on_entry_saved)
         self._watcher.start()
+
+        # Start watchdog thread
+        watchdog_thread = threading.Thread(target=self._watchdog, daemon=True)
+        watchdog_thread.start()
 
         # Run tray in separate thread
         tray_thread = threading.Thread(target=self._run_tray, daemon=True)
