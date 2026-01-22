@@ -287,13 +287,39 @@ class ClaudeMemoryApp:
 
 def main():
     """Main entry point."""
+    import traceback
+    import datetime
+
+    # Setup crash logging
+    def log_crash(error_msg: str):
+        """Write crash info to crash.log"""
+        try:
+            with open("crash.log", "a", encoding="utf-8") as f:
+                f.write(f"\n{'='*60}\n")
+                f.write(f"Crash at: {datetime.datetime.now()}\n")
+                f.write(f"{error_msg}\n")
+                f.write(f"{'='*60}\n")
+        except:
+            pass
+
+    # Catch exceptions in background threads
+    def thread_exception_handler(args):
+        error_msg = f"Thread error: {args.exc_type.__name__}: {args.exc_value}\n"
+        error_msg += "".join(traceback.format_tb(args.exc_traceback))
+        print(error_msg)
+        log_crash(error_msg)
+
+    threading.excepthook = thread_exception_handler
+
     app = ClaudeMemoryApp()
     try:
         app.run()
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        print(f"Error: {e}")
+        error_msg = f"Error: {e}\n{traceback.format_exc()}"
+        print(error_msg)
+        log_crash(error_msg)
         sys.exit(1)
 
 
