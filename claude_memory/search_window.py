@@ -49,6 +49,7 @@ class SearchWindow:
         self._multi_select_var: Optional[tk.BooleanVar] = None
         self._delete_selected_btn: Optional[ttk.Button] = None
         self._remove_duplicates_btn: Optional[ttk.Button] = None
+        self._multi_select_notice: Optional[tk.Label] = None
 
         # PDF viewer state
         self._pdf_canvas: Optional[tk.Canvas] = None
@@ -241,6 +242,19 @@ class SearchWindow:
         )
         self._delete_btn.grid(row=0, column=1, sticky="e", padx=(10, 0))
         self._delete_btn.grid_remove()  # Hide initially
+
+        # Multi-select notice (shown when multi-select is active)
+        self._multi_select_notice = tk.Label(
+            right_frame,
+            text="⚠ Multi-select mode is active\nSelect an entry to view details",
+            font=("Segoe UI", 11, "bold"),
+            fg="#ff6600",  # Orange color
+            bg="#fff3e0",  # Light orange background
+            pady=20,
+            relief=tk.RIDGE,
+            borderwidth=2
+        )
+        # Don't grid it yet - shown when multi-select is enabled
 
         # Detail text area (for non-PDF entries)
         self._detail_text = scrolledtext.ScrolledText(
@@ -627,11 +641,17 @@ class SearchWindow:
             # Hide the single-entry delete button
             self._delete_btn.grid_remove()
             self._clear_detail()
+            # Show multi-select notice
+            self._multi_select_notice.grid(row=1, column=0, sticky="nsew", padx=20, pady=20)
+            self._detail_text.grid_remove()
         else:
             # Disable multi-select
             self._results_listbox.config(selectmode=tk.SINGLE)
             self._delete_selected_btn.pack_forget()
             self._remove_duplicates_btn.pack_forget()
+            # Hide multi-select notice
+            self._multi_select_notice.grid_remove()
+            self._detail_text.grid(row=1, column=0, sticky="nsew")
             # Clear selection
             self._results_listbox.selection_clear(0, tk.END)
 
