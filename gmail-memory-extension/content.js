@@ -366,7 +366,7 @@
   }
 
   /**
-   * Create and inject save button into Gmail UI
+   * Create and inject floating save button
    */
   function createSaveButton() {
     // Remove existing button if any
@@ -375,54 +375,59 @@
       currentEmailButton = null;
     }
 
-    // Try multiple strategies to find where to inject the button
-    // Strategy 1: Look for the email header area
+    // Check if we're actually viewing an email
     const emailHeader = document.querySelector('div[data-message-id]');
     if (!emailHeader) {
-      console.log('CM: Email header not found');
+      console.log('CM: Not viewing an email (no data-message-id found)');
       return;
     }
 
-    // Find a suitable place to inject - try the top-right corner near date
-    let targetContainer = emailHeader.querySelector('td.gH') || // Header actions area
-                         emailHeader.querySelector('div.gH') ||
-                         emailHeader.querySelector('td[class*="apU"]') ||
-                         emailHeader;
+    console.log('CM: Creating floating save button for email');
 
-    console.log('CM: Injecting save button');
-
-    // Create save button
-    const saveBtn = document.createElement('span');
-    saveBtn.className = 'cm-save-email-btn';
-    saveBtn.style.cssText = 'display: inline-block; margin-left: 10px; margin-right: 10px;';
-    saveBtn.innerHTML = `
-      <button style="
-        background: #4A90E2;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 6px 12px;
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-        transition: background 0.2s;
-        vertical-align: middle;
-      " onmouseover="this.style.background='#357ABD'" onmouseout="this.style.background='#4A90E2'">
-        💾 Save
-      </button>
+    // Create floating action button
+    const saveBtn = document.createElement('div');
+    saveBtn.className = 'cm-floating-save-btn';
+    saveBtn.style.cssText = `
+      position: fixed;
+      bottom: 80px;
+      right: 30px;
+      z-index: 10000;
+      background: #4A90E2;
+      color: white;
+      border: none;
+      border-radius: 50px;
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: all 0.3s;
+      user-select: none;
     `;
+    saveBtn.innerHTML = `💾 Save to Memory`;
 
-    saveBtn.querySelector('button').addEventListener('click', saveCurrentEmail);
+    // Hover effects
+    saveBtn.onmouseenter = function() {
+      this.style.background = '#357ABD';
+      this.style.transform = 'scale(1.05)';
+      this.style.boxShadow = '0 6px 16px rgba(0,0,0,0.4)';
+    };
+    saveBtn.onmouseleave = function() {
+      this.style.background = '#4A90E2';
+      this.style.transform = 'scale(1)';
+      this.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+    };
 
-    // Append to target container
-    targetContainer.appendChild(saveBtn);
+    saveBtn.addEventListener('click', saveCurrentEmail);
+
+    // Append to body for fixed positioning
+    document.body.appendChild(saveBtn);
     currentEmailButton = saveBtn;
 
-    console.log('CM: Save button injected successfully');
+    console.log('CM: Floating save button created successfully');
   }
 
   /**
