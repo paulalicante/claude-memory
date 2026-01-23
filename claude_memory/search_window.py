@@ -246,7 +246,7 @@ class SearchWindow:
         # Multi-select notice (shown when multi-select is active)
         self._multi_select_notice = tk.Label(
             right_frame,
-            text="⚠ Multi-select mode is active\nSelect an entry to view details",
+            text="⚠ Multi-select mode is active\nUncheck Multi-select to view entry details",
             font=("Segoe UI", 11, "bold"),
             fg="#ff6600",  # Orange color
             bg="#fff3e0",  # Light orange background
