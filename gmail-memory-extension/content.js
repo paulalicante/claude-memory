@@ -283,11 +283,11 @@
   }
 
   // ============================================================================
-  // INBOX MONITORING - Auto-save emails from trusted contacts
+  // MANUAL EMAIL SAVING - Button to save currently viewed email
   // ============================================================================
 
-  let lastCheckedEmailId = null;
-  let checkingEmail = false;
+  let currentEmailButton = null;
+  let lastViewedEmailId = null;
 
   /**
    * Extract Gmail message ID from URL
@@ -366,22 +366,79 @@
   }
 
   /**
-   * Save an incoming email from a trusted contact
+   * Create and inject save button into Gmail UI
    */
-  function saveIncomingEmail(emailData) {
-    const title = `Email from ${emailData.sender}: ${emailData.subject || '(no subject)'}`;
+  function createSaveButton() {
+    // Remove existing button if any
+    if (currentEmailButton) {
+      currentEmailButton.remove();
+      currentEmailButton = null;
+    }
+
+    // Find the email action bar (where Reply, Forward buttons are)
+    const actionBar = document.querySelector('div[role="main"] div[data-tooltip*="Reply"]')?.parentElement?.parentElement ||
+                      document.querySelector('div[role="main"] td[class*="gU"]') ||
+                      document.querySelector('div.btC');
+
+    if (!actionBar) {
+      return; // Action bar not found
+    }
+
+    // Create save button
+    const saveBtn = document.createElement('div');
+    saveBtn.className = 'cm-save-email-btn';
+    saveBtn.innerHTML = `
+      <button style="
+        background: #4A90E2;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        transition: background 0.2s;
+      " onmouseover="this.style.background='#357ABD'" onmouseout="this.style.background='#4A90E2'">
+        💾 Save to Claude Memory
+      </button>
+    `;
+
+    saveBtn.querySelector('button').addEventListener('click', saveCurrentEmail);
+
+    // Insert at the beginning of action bar
+    actionBar.insertBefore(saveBtn, actionBar.firstChild);
+    currentEmailButton = saveBtn;
+  }
+
+  /**
+   * Save the currently viewed email
+   */
+  function saveCurrentEmail() {
+    const emailData = extractViewedEmailData();
+
+    if (!emailData.body || !emailData.subject) {
+      showToast('Could not extract email content', 'error');
+      return;
+    }
+
+    const title = `Email: ${emailData.subject || '(no subject)'}`;
+    const senderInfo = emailData.sender ? ` from ${emailData.sender}` : '';
 
     const memoryData = {
-      title: title.substring(0, 200),
-      content: emailData.bodyText || emailData.body, // Use plain text for search
+      title: (title + senderInfo).substring(0, 200),
+      content: emailData.bodyText || emailData.body,
       category: 'email',
-      tags: 'gmail, received-email, trusted-sender, html-email',
+      tags: 'gmail, saved-email, html-email',
       metadata: {
         sender: emailData.sender,
         subject: emailData.subject,
         gmail_id: emailData.gmailId,
         date: emailData.timestamp,
-        html_content: emailData.body, // Store HTML separately
+        html_content: emailData.body,
         content_type: 'html'
       }
     };
@@ -391,88 +448,55 @@
       data: memoryData
     }, response => {
       if (response && response.success) {
-        // Mark as saved to prevent re-saving
-        sendMessageSafe({
-          action: 'markEmailSaved',
-          gmailId: emailData.gmailId,
-          entryId: response.id
-        });
-        showToast('Auto-saved email from trusted contact!', 'success');
+        showToast('Email saved to Claude Memory!', 'success');
+      } else {
+        showToast('Failed to save: ' + (response?.error || 'Unknown error'), 'error');
       }
     });
   }
 
   /**
-   * Check current email view and auto-save if from trusted contact
+   * Check current email view and inject save button
    */
-  async function checkCurrentEmail() {
-    if (checkingEmail) return;
-
+  function checkCurrentEmailView() {
     const gmailId = getGmailIdFromUrl();
-    if (!gmailId || gmailId === lastCheckedEmailId) {
-      return; // No email view or already checked
-    }
 
-    checkingEmail = true;
-    lastCheckedEmailId = gmailId;
+    // If viewing an email (has ID) and it's different from last viewed
+    if (gmailId && gmailId !== lastViewedEmailId) {
+      lastViewedEmailId = gmailId;
 
-    try {
-      // First check if already saved
-      const savedCheck = await new Promise(resolve => {
-        sendMessageSafe(
-          { action: 'checkEmailSaved', gmailId },
-          response => resolve(response || { saved: false })
-        );
-      });
-
-      if (savedCheck && savedCheck.saved) {
-        console.log('Email already saved, skipping');
-        return;
-      }
-
-      // Extract email data
-      const emailData = extractViewedEmailData();
-      if (!emailData.sender || !emailData.body) {
-        return;
-      }
-
-      // Check if sender is trusted
-      const trustedCheck = await new Promise(resolve => {
-        sendMessageSafe(
-          { action: 'checkTrustedContact', email: emailData.sender },
-          response => resolve(response || { trusted: false })
-        );
-      });
-
-      if (trustedCheck && trustedCheck.trusted) {
-        console.log('Trusted sender detected:', emailData.sender);
-        saveIncomingEmail(emailData);
-      }
-    } finally {
-      checkingEmail = false;
+      // Wait a moment for email to fully load, then inject button
+      setTimeout(() => {
+        createSaveButton();
+      }, 500);
+    } else if (!gmailId && currentEmailButton) {
+      // Not viewing an email anymore, remove button
+      currentEmailButton.remove();
+      currentEmailButton = null;
+      lastViewedEmailId = null;
     }
   }
 
   /**
-   * Setup inbox monitoring
+   * Setup email view monitoring to inject save button
    */
-  function setupInboxMonitor() {
+  function setupEmailViewMonitor() {
     // Check on URL changes (when user opens an email)
     let lastUrl = window.location.href;
 
     const urlObserver = setInterval(() => {
       if (window.location.href !== lastUrl) {
         lastUrl = window.location.href;
-        // Wait a moment for email content to load
-        setTimeout(checkCurrentEmail, 1000);
+        checkCurrentEmailView();
       }
     }, 500);
 
     // Also check when page content changes significantly
     const contentObserver = new MutationObserver((mutations) => {
-      // Debounce - only check if we haven't recently
-      if (!checkingEmail && getGmailIdFromUrl() !== lastCheckedEmailId) {
-        setTimeout(checkCurrentEmail, 500);
+      // Check if we need to inject button
+      const gmailId = getGmailIdFromUrl();
+      if (gmailId && gmailId !== lastViewedEmailId) {
+        checkCurrentEmailView();
       }
     });
 
@@ -484,7 +508,7 @@
       });
     }
 
-    console.log('Gmail inbox monitor: Active');
+    console.log('Gmail save button monitor: Active');
   }
 
   /**
@@ -498,8 +522,8 @@
       if (document.querySelector('div[role="main"]')) {
         clearInterval(checkReady);
         setupSendMonitor();
-        setupInboxMonitor();
-        console.log('Gmail to Claude Memory: Ready (send + inbox monitoring)');
+        setupEmailViewMonitor();
+        console.log('Gmail to Claude Memory: Ready (send monitor + save button)');
       }
     }, 1000);
 
