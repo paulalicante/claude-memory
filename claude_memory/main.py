@@ -7,6 +7,8 @@ import sys
 import threading
 import tkinter as tk
 from typing import Optional
+import os
+import socket
 
 import keyboard
 import pyperclip
@@ -21,6 +23,34 @@ from .search_window import SearchWindow
 from .chat_window import ChatWindow
 from .notifications import notify_saved
 from . import http_server
+
+
+# Single instance lock
+_lock_socket = None
+
+
+def acquire_single_instance_lock():
+    """Acquire a lock to ensure only one instance runs."""
+    global _lock_socket
+    try:
+        # Try to bind to a local socket - if another instance is running, this will fail
+        _lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        _lock_socket.bind(('127.0.0.1', 47283))  # Random high port
+        return True
+    except OSError:
+        # Port is already in use - another instance is running
+        return False
+
+
+def release_single_instance_lock():
+    """Release the single instance lock."""
+    global _lock_socket
+    if _lock_socket:
+        try:
+            _lock_socket.close()
+        except:
+            pass
+        _lock_socket = None
 
 
 class ClipboardSaveDialog:
@@ -325,6 +355,11 @@ def main():
     import traceback
     import datetime
 
+    # Check for existing instance
+    if not acquire_single_instance_lock():
+        print("Claude Memory is already running.")
+        sys.exit(0)
+
     # Setup crash logging
     def log_crash(error_msg: str):
         """Write crash info to crash.log"""
@@ -356,6 +391,9 @@ def main():
         print(error_msg)
         log_crash(error_msg)
         sys.exit(1)
+    finally:
+        # Release lock on exit
+        release_single_instance_lock()
 
 
 if __name__ == "__main__":
