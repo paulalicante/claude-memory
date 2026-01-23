@@ -7,7 +7,11 @@
       "Bash(timeout:*)",
       "Bash(start \"\" pythonw \"g:\\\\My Drive\\\\ClaudeMemory\\\\run.pyw\")",
       "Bash(git init:*)",
-      "Bash(gh repo create:*)"
+      "Bash(gh repo create:*)",
+      "Bash(start cmd /k \"python -m claude_memory.main\")",
+      "Bash(wmic process where \"name=''python.exe''\" get ProcessId,CommandLine)",
+      "Bash(wscript create_shortcut.vbs)",
+      "Bash(TASKKILL //F //PID 50984)"
     ]
   }
 }

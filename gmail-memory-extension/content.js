@@ -375,43 +375,54 @@
       currentEmailButton = null;
     }
 
-    // Find the email action bar (where Reply, Forward buttons are)
-    const actionBar = document.querySelector('div[role="main"] div[data-tooltip*="Reply"]')?.parentElement?.parentElement ||
-                      document.querySelector('div[role="main"] td[class*="gU"]') ||
-                      document.querySelector('div.btC');
-
-    if (!actionBar) {
-      return; // Action bar not found
+    // Try multiple strategies to find where to inject the button
+    // Strategy 1: Look for the email header area
+    const emailHeader = document.querySelector('div[data-message-id]');
+    if (!emailHeader) {
+      console.log('CM: Email header not found');
+      return;
     }
 
+    // Find a suitable place to inject - try the top-right corner near date
+    let targetContainer = emailHeader.querySelector('td.gH') || // Header actions area
+                         emailHeader.querySelector('div.gH') ||
+                         emailHeader.querySelector('td[class*="apU"]') ||
+                         emailHeader;
+
+    console.log('CM: Injecting save button');
+
     // Create save button
-    const saveBtn = document.createElement('div');
+    const saveBtn = document.createElement('span');
     saveBtn.className = 'cm-save-email-btn';
+    saveBtn.style.cssText = 'display: inline-block; margin-left: 10px; margin-right: 10px;';
     saveBtn.innerHTML = `
       <button style="
         background: #4A90E2;
         color: white;
         border: none;
         border-radius: 4px;
-        padding: 8px 16px;
-        font-size: 13px;
+        padding: 6px 12px;
+        font-size: 12px;
         font-weight: 500;
         cursor: pointer;
-        display: flex;
+        display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: 4px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         transition: background 0.2s;
+        vertical-align: middle;
       " onmouseover="this.style.background='#357ABD'" onmouseout="this.style.background='#4A90E2'">
-        💾 Save to Claude Memory
+        💾 Save
       </button>
     `;
 
     saveBtn.querySelector('button').addEventListener('click', saveCurrentEmail);
 
-    // Insert at the beginning of action bar
-    actionBar.insertBefore(saveBtn, actionBar.firstChild);
+    // Append to target container
+    targetContainer.appendChild(saveBtn);
     currentEmailButton = saveBtn;
+
+    console.log('CM: Save button injected successfully');
   }
 
   /**
