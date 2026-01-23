@@ -5,12 +5,16 @@ A Windows desktop application that captures and stores important information fro
 ## What It Does
 
 - Monitors clipboard for specially formatted `@@CLAUDE_MEMORY@@` blocks
-- Automatically saves entries to SQLite database with full-text search (FTS5)
-- Provides search UI, category filtering, and AI-powered natural language queries
-- Runs in system tray with global hotkey access
+- Automatically saves entries to SQLite database with substring search
+- Provides search UI with checkboxes for multi-select operations
+- Remove Duplicates feature - merges duplicate entries line-by-line
+- HTML email viewing - preserves formatting from Gmail
+- Runs in system tray with global hotkey access (Ctrl+Shift+M)
+- Single-instance protection prevents multiple copies running
+- Watchdog monitors keyboard hooks and auto-recovers
 - Exposes MCP server for direct Claude integration
 - HTTP server for browser extension integration
-- PDF import support
+- PDF import with visual rendering
 
 ## Tech Stack
 
@@ -26,7 +30,13 @@ A Windows desktop application that captures and stores important information fro
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the app (no console)
+# Quick start (recommended)
+Double-click start.bat
+
+# Restart (kills old instance and starts fresh)
+Double-click restart.bat
+
+# Or run manually
 python run.pyw
 
 # Or with console output
@@ -113,17 +123,60 @@ The app runs an HTTP server on port 5000 for browser extension communication:
 
 ## Browser Extension
 
-The `gmail-memory-extension/` folder contains a Chrome extension that can capture content from:
-- Gmail emails
-- Web pages
-- Other supported sites
+The `gmail-memory-extension/` folder contains a Chrome extension for Gmail:
 
-Load as unpacked extension in Chrome at `chrome://extensions/`
+**Features:**
+- Manual save button appears when viewing emails
+- Click "💾 Save to Claude Memory" to capture email
+- Preserves HTML formatting (colors, fonts, images, links)
+- Auto-saves sent emails with prompt
+- Stores both HTML (for viewing) and plain text (for search)
+
+**Installation:**
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable "Developer mode"
+3. Click "Load unpacked"
+4. Select the `gmail-memory-extension/` folder
+5. Open Gmail - button will appear when viewing emails
+
+## Key Features
+
+### Multi-Select with Checkboxes
+- Enable multi-select mode with checkbox
+- Checkboxes appear for each entry (no Ctrl+clicking!)
+- Orange warning shows when multi-select is active
+- Select multiple entries for bulk operations
+
+### Remove Duplicates
+- Select 2+ duplicate entries
+- Click "Remove Duplicates"
+- Merges content line-by-line, keeping only unique lines
+- Creates new `[Merged]` entry and deletes originals
+- Perfect for continuing conversations captured multiple times
+
+### HTML Email Viewing
+- Emails saved from Gmail preserve full formatting
+- Click entry to auto-open in browser with styled layout
+- Plain text preview shown in app for quick reference
+- Search works on plain text content
+
+### Smart Search
+- Substring matching - "paulspain" finds "paulspainward"
+- Searches in both title and content
+- Category and date filtering
+- Real-time results
+
+### Stability Features
+- **Single Instance**: Prevents multiple copies from running
+- **Watchdog**: Monitors keyboard hooks, auto-recovers if lost
+- **Crash Logging**: Writes errors to `crash.log` for debugging
+- Handles desktop switching without crashing
 
 ## Constants
 
 - Memory markers: `@@CLAUDE_MEMORY@@` / `@@END_MEMORY@@`
 - Default hotkey: `ctrl+shift+m`
-- HTTP server port: 5000
+- HTTP server port: 8765 (dynamic)
+- Single-instance lock port: 47283
 - Session timeout: 4 hours
 - Max AI tokens: 2048
