@@ -59,6 +59,10 @@ class SearchWindow:
         self._pdf_images: List = []  # Store PhotoImage references to prevent garbage collection
         self._pdf_frame: Optional[tk.Frame] = None
 
+        # HTML viewer state
+        self._html_frame: Optional[tk.Frame] = None
+        self._html_text: Optional[tk.Text] = None
+
     def _create_window(self) -> None:
         """Create the search window."""
         self._root = tk.Toplevel()
@@ -323,6 +327,36 @@ class SearchWindow:
 
         self._pdf_canvas.bind("<Configure>", _configure_canvas)
 
+        # HTML viewer frame (hidden by default, shown for HTML email entries)
+        self._html_frame = ttk.Frame(right_frame)
+
+        # Create scrolled text widget for HTML display
+        self._html_text = tk.Text(
+            self._html_frame,
+            wrap=tk.WORD,
+            font=("Segoe UI", 10),
+            padx=10,
+            pady=10,
+            state=tk.DISABLED
+        )
+        html_scrollbar = ttk.Scrollbar(self._html_frame, orient=tk.VERTICAL, command=self._html_text.yview)
+        self._html_text.configure(yscrollcommand=html_scrollbar.set)
+
+        self._html_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        html_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Configure text tags for HTML formatting
+        self._html_text.tag_configure("h1", font=("Segoe UI", 18, "bold"), spacing3=10)
+        self._html_text.tag_configure("h2", font=("Segoe UI", 16, "bold"), spacing3=8)
+        self._html_text.tag_configure("h3", font=("Segoe UI", 14, "bold"), spacing3=6)
+        self._html_text.tag_configure("bold", font=("Segoe UI", 10, "bold"))
+        self._html_text.tag_configure("italic", font=("Segoe UI", 10, "italic"))
+        self._html_text.tag_configure("underline", underline=True)
+        self._html_text.tag_configure("link", foreground="blue", underline=True)
+        self._html_text.tag_configure("pre", font=("Consolas", 9), background="#f5f5f5")
+        self._html_text.tag_configure("center", justify="center")
+        self._html_text.tag_configure("quote", lmargin1=20, lmargin2=20, foreground="#666")
+
     def _refresh_categories(self) -> None:
         """Refresh the category dropdown with current categories."""
         try:
@@ -550,8 +584,9 @@ class SearchWindow:
 
     def _show_text_detail(self, entry: dict) -> None:
         """Show text content in the detail pane."""
-        # Hide PDF viewer, show text
+        # Hide other viewers, show text
         self._pdf_frame.grid_remove()
+        self._html_frame.grid_remove()
         self._detail_text.grid(row=1, column=0, sticky="nsew")
 
         # Update detail text
@@ -572,8 +607,9 @@ class SearchWindow:
             self._show_text_detail(entry)
             return
 
-        # Hide text, show PDF viewer
+        # Hide other viewers, show PDF viewer
         self._detail_text.grid_remove()
+        self._html_frame.grid_remove()
         self._pdf_frame.grid(row=1, column=0, sticky="nsew")
 
         # Clear previous PDF images
@@ -628,11 +664,9 @@ class SearchWindow:
             return False
 
     def _show_html_viewer(self, entry: dict) -> None:
-        """Show HTML email content in the detail pane."""
+        """Show HTML email content in the detail pane with formatting."""
         import json
-        import tempfile
-        import webbrowser
-        import os
+        from html.parser import HTMLParser
 
         try:
             # Get HTML content from source_conversation field
@@ -645,87 +679,101 @@ class SearchWindow:
                 self._show_text_detail(entry)
                 return
 
-            # Hide PDF viewer, show text area for now
+            # Hide other viewers, show HTML viewer
             self._pdf_frame.grid_remove()
-            self._detail_text.grid(row=1, column=0, sticky="nsew")
+            self._detail_text.grid_remove()
+            self._html_frame.grid(row=1, column=0, sticky="nsew")
 
-            # Create a temporary HTML file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
-                # Add some basic styling
-                styled_html = f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <style>
-                        body {{
-                            font-family: Arial, sans-serif;
-                            padding: 20px;
-                            background-color: #f5f5f5;
-                        }}
-                        .email-container {{
-                            background-color: white;
-                            padding: 20px;
-                            border-radius: 5px;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        }}
-                        .email-header {{
-                            border-bottom: 2px solid #e0e0e0;
-                            padding-bottom: 10px;
-                            margin-bottom: 20px;
-                        }}
-                        .email-header h2 {{
-                            margin: 0 0 10px 0;
-                            color: #333;
-                        }}
-                        .email-meta {{
-                            font-size: 0.9em;
-                            color: #666;
-                        }}
-                        .email-body {{
-                            line-height: 1.6;
-                        }}
-                    </style>
-                </head>
-                <body>
-                    <div class="email-container">
-                        <div class="email-header">
-                            <h2>{entry.get('title', 'Email')}</h2>
-                            <div class="email-meta">
-                                <strong>From:</strong> {metadata.get('sender', 'Unknown')}<br>
-                                <strong>Subject:</strong> {metadata.get('subject', 'No subject')}<br>
-                                <strong>Date:</strong> {metadata.get('date', entry.get('created_at', ''))}
-                            </div>
-                        </div>
-                        <div class="email-body">
-                            {html_content}
-                        </div>
-                    </div>
-                </body>
-                </html>
-                """
-                f.write(styled_html)
-                html_file_path = f.name
+            # Clear previous content
+            self._html_text.config(state=tk.NORMAL)
+            self._html_text.delete("1.0", tk.END)
 
-            # Display message and offer to open in browser
-            self._detail_text.config(state=tk.NORMAL)
-            self._detail_text.delete("1.0", tk.END)
-            self._detail_text.insert(tk.END, f"{entry['title']}\n")
-            self._detail_text.insert(tk.END, "=" * len(entry["title"]) + "\n\n")
-            self._detail_text.insert(tk.END, f"From: {metadata.get('sender', 'Unknown')}\n")
-            self._detail_text.insert(tk.END, f"Subject: {metadata.get('subject', 'No subject')}\n\n")
-            self._detail_text.insert(tk.END, "This is an HTML email with preserved formatting.\n")
-            self._detail_text.insert(tk.END, f"Click here to view in browser: {html_file_path}\n\n")
-            self._detail_text.insert(tk.END, "Plain text preview:\n")
-            self._detail_text.insert(tk.END, "-" * 50 + "\n")
-            self._detail_text.insert(tk.END, entry.get("content", ""))
-            self._detail_text.config(state=tk.DISABLED)
+            # Add email header
+            self._html_text.insert(tk.END, f"{entry.get('title', 'Email')}\n", "h2")
+            self._html_text.insert(tk.END, f"From: {metadata.get('sender', 'Unknown')}\n")
+            self._html_text.insert(tk.END, f"Subject: {metadata.get('subject', 'No subject')}\n")
+            self._html_text.insert(tk.END, "\n" + "─" * 80 + "\n\n")
 
-            # Auto-open in browser
-            webbrowser.open(f'file:///{html_file_path}')
+            # Parse and render HTML
+            class SimpleHTMLRenderer(HTMLParser):
+                def __init__(self, text_widget):
+                    super().__init__()
+                    self.text = text_widget
+                    self.tag_stack = []
+                    self.skip_content = False
+
+                def handle_starttag(self, tag, attrs):
+                    tag_lower = tag.lower()
+                    if tag_lower in ('style', 'script'):
+                        self.skip_content = True
+                    elif tag_lower == 'br':
+                        self.text.insert(tk.END, "\n")
+                    elif tag_lower == 'p':
+                        self.text.insert(tk.END, "\n")
+                    elif tag_lower in ('h1', 'h2', 'h3'):
+                        self.text.insert(tk.END, "\n")
+                        self.tag_stack.append(tag_lower)
+                    elif tag_lower in ('b', 'strong'):
+                        self.tag_stack.append('bold')
+                    elif tag_lower in ('i', 'em'):
+                        self.tag_stack.append('italic')
+                    elif tag_lower == 'u':
+                        self.tag_stack.append('underline')
+                    elif tag_lower == 'a':
+                        self.tag_stack.append('link')
+                    elif tag_lower == 'pre':
+                        self.tag_stack.append('pre')
+                        self.text.insert(tk.END, "\n")
+                    elif tag_lower == 'blockquote':
+                        self.tag_stack.append('quote')
+                        self.text.insert(tk.END, "\n")
+                    elif tag_lower == 'div':
+                        # Check for style attributes
+                        for attr, value in attrs:
+                            if attr == 'style' and 'text-align: center' in value.lower():
+                                self.tag_stack.append('center')
+                                break
+                    elif tag_lower in ('ul', 'ol'):
+                        self.text.insert(tk.END, "\n")
+                    elif tag_lower == 'li':
+                        self.text.insert(tk.END, "\n  • ")
+
+                def handle_endtag(self, tag):
+                    tag_lower = tag.lower()
+                    if tag_lower in ('style', 'script'):
+                        self.skip_content = False
+                    elif tag_lower in ('p', 'h1', 'h2', 'h3', 'pre', 'blockquote', 'ul', 'ol'):
+                        self.text.insert(tk.END, "\n")
+                        if self.tag_stack and self.tag_stack[-1] == tag_lower:
+                            self.tag_stack.pop()
+                    elif tag_lower in ('b', 'strong', 'i', 'em', 'u', 'a', 'div'):
+                        # Pop corresponding tag from stack
+                        tag_map = {'b': 'bold', 'strong': 'bold', 'i': 'italic', 'em': 'italic', 'u': 'underline', 'a': 'link'}
+                        expected_tag = tag_map.get(tag_lower, tag_lower)
+                        if self.tag_stack and expected_tag in self.tag_stack:
+                            # Remove the most recent occurrence
+                            for i in range(len(self.tag_stack) - 1, -1, -1):
+                                if self.tag_stack[i] == expected_tag:
+                                    self.tag_stack.pop(i)
+                                    break
+
+                def handle_data(self, data):
+                    if not self.skip_content and data.strip():
+                        # Apply current tags
+                        if self.tag_stack:
+                            self.text.insert(tk.END, data, tuple(self.tag_stack))
+                        else:
+                            self.text.insert(tk.END, data)
+
+            renderer = SimpleHTMLRenderer(self._html_text)
+            renderer.feed(html_content)
+
+            self._html_text.config(state=tk.DISABLED)
 
         except Exception as e:
             print(f"Error rendering HTML: {e}")
+            import traceback
+            traceback.print_exc()
             self._show_text_detail(entry)
 
     def _clear_detail(self) -> None:
@@ -744,6 +792,9 @@ class SearchWindow:
         for widget in self._pdf_inner_frame.winfo_children():
             widget.destroy()
         self._pdf_images.clear()
+
+        # Hide HTML viewer
+        self._html_frame.grid_remove()
 
         # Show text area by default
         self._detail_text.grid(row=1, column=0, sticky="nsew")
