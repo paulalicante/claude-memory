@@ -543,6 +543,8 @@ class SearchWindow:
         # Check if this is a PDF entry
         if entry.get("pdf_path") and is_pdf_support_available():
             self._show_pdf_viewer(entry)
+        elif self._has_html_content(entry):
+            self._show_html_viewer(entry)
         else:
             self._show_text_detail(entry)
 
@@ -612,6 +614,117 @@ class SearchWindow:
 
         except Exception as e:
             print(f"Error rendering PDF: {e}")
+            self._show_text_detail(entry)
+
+    def _has_html_content(self, entry: dict) -> bool:
+        """Check if entry has HTML content."""
+        import json
+        try:
+            metadata_str = entry.get("metadata", "{}")
+            metadata = json.loads(metadata_str) if isinstance(metadata_str, str) else metadata_str
+            return metadata.get("content_type") == "html" and "html_content" in metadata
+        except:
+            return False
+
+    def _show_html_viewer(self, entry: dict) -> None:
+        """Show HTML email content in the detail pane."""
+        import json
+        import tempfile
+        import webbrowser
+        import os
+
+        try:
+            # Get HTML content from metadata
+            metadata_str = entry.get("metadata", "{}")
+            metadata = json.loads(metadata_str) if isinstance(metadata_str, str) else metadata_str
+            html_content = metadata.get("html_content", "")
+
+            if not html_content:
+                # Fall back to text
+                self._show_text_detail(entry)
+                return
+
+            # Hide PDF viewer, show text area for now
+            self._pdf_frame.grid_remove()
+            self._detail_text.grid(row=1, column=0, sticky="nsew")
+
+            # Create a temporary HTML file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+                # Add some basic styling
+                styled_html = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <style>
+                        body {{
+                            font-family: Arial, sans-serif;
+                            padding: 20px;
+                            background-color: #f5f5f5;
+                        }}
+                        .email-container {{
+                            background-color: white;
+                            padding: 20px;
+                            border-radius: 5px;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        }}
+                        .email-header {{
+                            border-bottom: 2px solid #e0e0e0;
+                            padding-bottom: 10px;
+                            margin-bottom: 20px;
+                        }}
+                        .email-header h2 {{
+                            margin: 0 0 10px 0;
+                            color: #333;
+                        }}
+                        .email-meta {{
+                            font-size: 0.9em;
+                            color: #666;
+                        }}
+                        .email-body {{
+                            line-height: 1.6;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <div class="email-container">
+                        <div class="email-header">
+                            <h2>{entry.get('title', 'Email')}</h2>
+                            <div class="email-meta">
+                                <strong>From:</strong> {metadata.get('sender', 'Unknown')}<br>
+                                <strong>Subject:</strong> {metadata.get('subject', 'No subject')}<br>
+                                <strong>Date:</strong> {metadata.get('date', entry.get('created_at', ''))}
+                            </div>
+                        </div>
+                        <div class="email-body">
+                            {html_content}
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """
+                f.write(styled_html)
+                html_file_path = f.name
+
+            # Display message and offer to open in browser
+            self._detail_text.config(state=tk.NORMAL)
+            self._detail_text.delete("1.0", tk.END)
+            self._detail_text.insert(tk.END, f"{entry['title']}\n")
+            self._detail_text.insert(tk.END, "=" * len(entry["title"]) + "\n\n")
+            self._detail_text.insert(tk.END, f"From: {metadata.get('sender', 'Unknown')}\n")
+            self._detail_text.insert(tk.END, f"Subject: {metadata.get('subject', 'No subject')}\n\n")
+            self._detail_text.insert(tk.END, "This is an HTML email with preserved formatting.\n")
+            self._detail_text.insert(tk.END, f"Click here to view in browser: {html_file_path}\n\n")
+            self._detail_text.insert(tk.END, "Plain text preview:\n")
+            self._detail_text.insert(tk.END, "-" * 50 + "\n")
+            self._detail_text.insert(tk.END, entry.get("content", ""))
+            self._detail_text.config(state=tk.DISABLED)
+
+            # Auto-open in browser
+            webbrowser.open(f'file:///{html_file_path}')
+
+        except Exception as e:
+            print(f"Error rendering HTML: {e}")
             self._show_text_detail(entry)
 
     def _clear_detail(self) -> None:

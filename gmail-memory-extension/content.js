@@ -357,7 +357,9 @@
                    document.querySelector('div.ii.gt div') ||
                    document.querySelector('div[role="main"] div.a3s');
     if (bodyEl) {
-      data.body = bodyEl.innerText || bodyEl.textContent || '';
+      // Capture HTML to preserve layout
+      data.body = bodyEl.innerHTML || '';
+      data.bodyText = bodyEl.innerText || bodyEl.textContent || ''; // Also save plain text for search
     }
 
     return data;
@@ -371,14 +373,16 @@
 
     const memoryData = {
       title: title.substring(0, 200),
-      content: emailData.body,
+      content: emailData.bodyText || emailData.body, // Use plain text for search
       category: 'email',
-      tags: 'gmail, received-email, trusted-sender',
+      tags: 'gmail, received-email, trusted-sender, html-email',
       metadata: {
         sender: emailData.sender,
         subject: emailData.subject,
         gmail_id: emailData.gmailId,
-        date: emailData.timestamp
+        date: emailData.timestamp,
+        html_content: emailData.body, // Store HTML separately
+        content_type: 'html'
       }
     };
 
