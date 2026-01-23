@@ -258,13 +258,17 @@ def search_entries(
 
     # Base query - join with FTS if there's a search query
     if query.strip():
-        # Use FTS5 search
+        # Use FTS5 search with prefix matching
+        # Add * wildcard to each word for partial matching
+        search_terms = query.strip().split()
+        fts_query = ' '.join([f"{term}*" for term in search_terms])
+
         base_sql = """
             SELECT e.* FROM entries e
             JOIN entries_fts fts ON e.id = fts.rowid
             WHERE entries_fts MATCH ?
         """
-        params.append(query)
+        params.append(fts_query)
     else:
         base_sql = "SELECT * FROM entries e WHERE 1=1"
 
