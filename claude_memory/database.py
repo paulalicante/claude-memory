@@ -256,22 +256,14 @@ def search_entries(
     conditions = []
     params = []
 
-    # Base query - join with FTS if there's a search query
+    # Base query - use LIKE for substring matching
     if query.strip():
-        # Use both FTS5 (for word prefix) and LIKE (for substring within words)
-        # This handles both "paul*" matching "paulspainward" as a word
-        # and "paulspain" matching within "paulspainward"
-        search_terms = query.strip().split()
-        fts_query = ' '.join([f"{term}*" for term in search_terms])
-
+        # Use LIKE for substring matching to find partial words
+        # e.g., "paulspain" will match "paulspainward"
         base_sql = """
-            SELECT DISTINCT e.* FROM entries e
-            LEFT JOIN entries_fts fts ON e.id = fts.rowid
-            WHERE (entries_fts MATCH ?
-                   OR LOWER(e.title) LIKE ?
-                   OR LOWER(e.content) LIKE ?)
+            SELECT e.* FROM entries e
+            WHERE (LOWER(e.title) LIKE ? OR LOWER(e.content) LIKE ?)
         """
-        params.append(fts_query)
         like_pattern = f"%{query.lower()}%"
         params.append(like_pattern)
         params.append(like_pattern)
