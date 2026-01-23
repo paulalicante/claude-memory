@@ -258,17 +258,23 @@ def search_entries(
 
     # Base query - join with FTS if there's a search query
     if query.strip():
-        # Use FTS5 search with prefix matching
-        # Add * wildcard to each word for partial matching
+        # Use both FTS5 (for word prefix) and LIKE (for substring within words)
+        # This handles both "paul*" matching "paulspainward" as a word
+        # and "paulspain" matching within "paulspainward"
         search_terms = query.strip().split()
         fts_query = ' '.join([f"{term}*" for term in search_terms])
 
         base_sql = """
-            SELECT e.* FROM entries e
-            JOIN entries_fts fts ON e.id = fts.rowid
-            WHERE entries_fts MATCH ?
+            SELECT DISTINCT e.* FROM entries e
+            LEFT JOIN entries_fts fts ON e.id = fts.rowid
+            WHERE (entries_fts MATCH ?
+                   OR LOWER(e.title) LIKE ?
+                   OR LOWER(e.content) LIKE ?)
         """
         params.append(fts_query)
+        like_pattern = f"%{query.lower()}%"
+        params.append(like_pattern)
+        params.append(like_pattern)
     else:
         base_sql = "SELECT * FROM entries e WHERE 1=1"
 
