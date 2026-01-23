@@ -50,6 +50,9 @@ class SearchWindow:
         self._delete_selected_btn: Optional[ttk.Button] = None
         self._remove_duplicates_btn: Optional[ttk.Button] = None
         self._multi_select_notice: Optional[tk.Label] = None
+        self._check_vars: dict = {}  # Maps index to BooleanVar for checkboxes
+        self._checkbox_frame: Optional[tk.Frame] = None
+        self._checkbox_canvas: Optional[tk.Canvas] = None
 
         # PDF viewer state
         self._pdf_canvas: Optional[tk.Canvas] = None
@@ -209,14 +212,35 @@ class SearchWindow:
         )
         self._results_listbox.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = ttk.Scrollbar(
+        self._listbox_scrollbar = ttk.Scrollbar(
             left_frame, orient=tk.VERTICAL, command=self._results_listbox.yview
         )
-        scrollbar.grid(row=0, column=1, sticky="ns")
-        self._results_listbox.config(yscrollcommand=scrollbar.set)
+        self._listbox_scrollbar.grid(row=0, column=1, sticky="ns")
+        self._results_listbox.config(yscrollcommand=self._listbox_scrollbar.set)
 
         self._results_listbox.bind("<<ListboxSelect>>", self._on_select)
         self._results_listbox.bind("<Double-Button-1>", self._on_double_click)
+
+        # Checkbox view (shown when multi-select is active)
+        self._checkbox_canvas = tk.Canvas(left_frame, bg="white")
+        self._checkbox_scrollbar = ttk.Scrollbar(
+            left_frame, orient=tk.VERTICAL, command=self._checkbox_canvas.yview
+        )
+        self._checkbox_frame = ttk.Frame(self._checkbox_canvas)
+        self._checkbox_canvas.configure(yscrollcommand=self._checkbox_scrollbar.set)
+
+        # Create window in canvas
+        self._checkbox_canvas_window = self._checkbox_canvas.create_window(
+            (0, 0), window=self._checkbox_frame, anchor="nw"
+        )
+
+        # Bind resize
+        self._checkbox_frame.bind("<Configure>", lambda e: self._checkbox_canvas.configure(
+            scrollregion=self._checkbox_canvas.bbox("all")
+        ))
+        self._checkbox_canvas.bind("<Configure>", self._on_checkbox_canvas_resize)
+
+        # Don't grid yet - shown when multi-select is enabled
 
         # Right side: detail view
         right_frame = ttk.Frame(paned)
@@ -631,11 +655,67 @@ class SearchWindow:
                 self._clear_detail()
                 self._do_search()  # Refresh the list
 
+    def _on_checkbox_canvas_resize(self, event):
+        """Handle canvas resize to update checkbox frame width."""
+        self._checkbox_canvas.itemconfig(self._checkbox_canvas_window, width=event.width)
+
+    def _populate_checkboxes(self):
+        """Populate the checkbox view with current results."""
+        # Clear existing checkboxes
+        for widget in self._checkbox_frame.winfo_children():
+            widget.destroy()
+        self._check_vars.clear()
+
+        # Create checkbox for each result
+        for i, entry in enumerate(self._results):
+            var = tk.BooleanVar()
+            self._check_vars[i] = var
+
+            # Create frame for this row
+            row_frame = ttk.Frame(self._checkbox_frame)
+            row_frame.pack(fill=tk.X, padx=5, pady=2)
+
+            # Checkbox
+            cb = ttk.Checkbutton(row_frame, variable=var)
+            cb.pack(side=tk.LEFT)
+
+            # Entry label - clickable to view
+            title = entry.get('title', 'Untitled')
+            date = entry.get('created_at', '')[:10] if entry.get('created_at') else ''
+            display = f"{title}"
+            if date:
+                display += f" ({date})"
+
+            label = tk.Label(
+                row_frame,
+                text=display,
+                font=("Segoe UI", 10),
+                anchor="w",
+                cursor="hand2",
+                bg="#FFFFFF" if i % 2 == 0 else "#F5F5F5"
+            )
+            label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+
+            # Click label to view details
+            label.bind("<Button-1>", lambda e, idx=i: self._on_checkbox_label_click(idx))
+
+            # Alternate row colors
+            row_frame.configure(style="" if i % 2 == 0 else "Alt.TFrame")
+
+    def _on_checkbox_label_click(self, index):
+        """Handle click on checkbox label to view entry."""
+        if 0 <= index < len(self._results):
+            self._selected_entry = self._results[index]
+            self._display_detail(self._selected_entry)
+
+    def _get_checked_indices(self):
+        """Get list of checked item indices."""
+        return [i for i, var in self._check_vars.items() if var.get()]
+
     def _toggle_multi_select(self) -> None:
         """Toggle between single and multi-select mode."""
         if self._multi_select_var.get():
             # Enable multi-select
-            self._results_listbox.config(selectmode=tk.EXTENDED)
             self._delete_selected_btn.pack(side=tk.LEFT)
             self._remove_duplicates_btn.pack(side=tk.LEFT, padx=(5, 0))
             # Hide the single-entry delete button
@@ -644,25 +724,49 @@ class SearchWindow:
             # Show multi-select notice
             self._multi_select_notice.grid(row=1, column=0, sticky="nsew", padx=20, pady=20)
             self._detail_text.grid_remove()
+
+            # Switch from listbox to checkbox view
+            self._results_listbox.grid_remove()
+            self._listbox_scrollbar.grid_remove()
+
+            self._checkbox_canvas.grid(row=0, column=0, sticky="nsew")
+            self._checkbox_scrollbar.grid(row=0, column=1, sticky="ns")
+
+            # Populate checkboxes with current results
+            self._populate_checkboxes()
         else:
             # Disable multi-select
-            self._results_listbox.config(selectmode=tk.SINGLE)
             self._delete_selected_btn.pack_forget()
             self._remove_duplicates_btn.pack_forget()
             # Hide multi-select notice
             self._multi_select_notice.grid_remove()
             self._detail_text.grid(row=1, column=0, sticky="nsew")
+
+            # Switch back to listbox view
+            self._checkbox_canvas.grid_remove()
+            self._checkbox_scrollbar.grid_remove()
+
+            self._results_listbox.grid(row=0, column=0, sticky="nsew")
+            self._listbox_scrollbar.grid(row=0, column=1, sticky="ns")
+
             # Clear selection
             self._results_listbox.selection_clear(0, tk.END)
 
     def _delete_multiple(self) -> None:
         """Delete all selected entries after confirmation."""
-        selection = self._results_listbox.curselection()
-        if not selection:
+        # Get checked items
+        checked_indices = self._get_checked_indices()
+        if not checked_indices:
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "No Selection",
+                "Please check at least one entry to delete.",
+                parent=self._root
+            )
             return
 
         # Get selected entries
-        selected_entries = [self._results[i] for i in selection]
+        selected_entries = [self._results[i] for i in checked_indices]
         count = len(selected_entries)
 
         # Confirmation dialog
@@ -694,18 +798,19 @@ class SearchWindow:
 
     def _remove_duplicates(self) -> None:
         """Merge selected entries into one clean entry and delete duplicates."""
-        selection = self._results_listbox.curselection()
-        if len(selection) < 2:
+        # Get checked items
+        checked_indices = self._get_checked_indices()
+        if len(checked_indices) < 2:
             from tkinter import messagebox
             messagebox.showinfo(
                 "Select Multiple",
-                "Please select at least 2 entries to remove duplicates.",
+                "Please check at least 2 entries to remove duplicates.",
                 parent=self._root
             )
             return
 
         # Get selected entries sorted by date (oldest first)
-        selected_entries = [self._results[i] for i in selection]
+        selected_entries = [self._results[i] for i in checked_indices]
         selected_entries.sort(key=lambda e: e.get('created_at', ''))
 
         # Confirmation dialog
