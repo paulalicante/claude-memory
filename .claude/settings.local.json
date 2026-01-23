@@ -11,7 +11,10 @@
       "Bash(start cmd /k \"python -m claude_memory.main\")",
       "Bash(wmic process where \"name=''python.exe''\" get ProcessId,CommandLine)",
       "Bash(wscript create_shortcut.vbs)",
-      "Bash(TASKKILL //F //PID 50984)"
+      "Bash(TASKKILL //F //PID 50984)",
+      "Bash(call restart.bat)",
+      "Bash(cmd //c restart.bat)",
+      "Read(//g/My Drive/ClaudeMemory/**)"
     ]
   }
 }

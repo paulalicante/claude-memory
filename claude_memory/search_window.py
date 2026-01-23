@@ -620,7 +620,8 @@ class SearchWindow:
         """Check if entry has HTML content."""
         import json
         try:
-            metadata_str = entry.get("metadata", "{}")
+            # Metadata is stored in source_conversation field
+            metadata_str = entry.get("source_conversation", "{}")
             metadata = json.loads(metadata_str) if isinstance(metadata_str, str) else metadata_str
             return metadata.get("content_type") == "html" and "html_content" in metadata
         except:
@@ -634,8 +635,8 @@ class SearchWindow:
         import os
 
         try:
-            # Get HTML content from metadata
-            metadata_str = entry.get("metadata", "{}")
+            # Get HTML content from source_conversation field
+            metadata_str = entry.get("source_conversation", "{}")
             metadata = json.loads(metadata_str) if isinstance(metadata_str, str) else metadata_str
             html_content = metadata.get("html_content", "")
 
