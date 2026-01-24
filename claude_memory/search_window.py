@@ -758,7 +758,7 @@ class SearchWindow:
                     try:
                         pil_image = None
 
-                        # Handle base64 inline images
+                        # Handle base64 inline images (load immediately - no network)
                         if src.startswith('data:image'):
                             # Extract base64 data
                             if ';base64,' in src:
@@ -766,21 +766,16 @@ class SearchWindow:
                                 image_data = base64.b64decode(base64_data)
                                 pil_image = Image.open(io.BytesIO(image_data))
 
-                        # Handle HTTP/HTTPS URLs
-                        elif src.startswith('http://') or src.startswith('https://'):
-                            try:
-                                with urllib.request.urlopen(src, timeout=3) as response:
-                                    image_data = response.read()
-                                    pil_image = Image.open(io.BytesIO(image_data))
-                            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
-                                # Failed to load image, skip it
-                                self.text.insert(tk.END, "[Image]")
-                                return
-
                         # Handle CID references (Gmail inline images)
                         elif src.startswith('cid:'):
                             # Can't resolve CID without access to email MIME parts
                             self.text.insert(tk.END, "[Inline Image]")
+                            return
+
+                        # Handle HTTP/HTTPS URLs - skip to avoid blocking
+                        elif src.startswith('http://') or src.startswith('https://'):
+                            # Just show placeholder instead of blocking on network load
+                            self.text.insert(tk.END, f"[Image: {src[:50]}...]")
                             return
 
                         if pil_image:
