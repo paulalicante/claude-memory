@@ -772,11 +772,16 @@ class SearchWindow:
                             self.text.insert(tk.END, "[Inline Image]")
                             return
 
-                        # Handle HTTP/HTTPS URLs - skip to avoid blocking
+                        # Handle HTTP/HTTPS URLs
                         elif src.startswith('http://') or src.startswith('https://'):
-                            # Just show placeholder instead of blocking on network load
-                            self.text.insert(tk.END, f"[Image: {src[:50]}...]")
-                            return
+                            try:
+                                with urllib.request.urlopen(src, timeout=5) as response:
+                                    image_data = response.read()
+                                    pil_image = Image.open(io.BytesIO(image_data))
+                            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, Exception):
+                                # Failed to load image, show placeholder
+                                self.text.insert(tk.END, f"[Image failed to load]")
+                                return
 
                         if pil_image:
                             # Resize if too large (max width 600px)
