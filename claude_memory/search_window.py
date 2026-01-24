@@ -712,14 +712,16 @@ class SearchWindow:
 
                 def handle_starttag(self, tag, attrs):
                     tag_lower = tag.lower()
-                    if tag_lower in ('style', 'script'):
+                    if tag_lower in ('style', 'script', 'head', 'meta', 'link'):
                         self.skip_content = True
+                    elif tag_lower == 'hr':
+                        self.text.insert(tk.END, "\n" + "─" * 60 + "\n")
                     elif tag_lower == 'br':
                         self.text.insert(tk.END, "\n")
                     elif tag_lower == 'p':
-                        self.text.insert(tk.END, "\n")
+                        self.text.insert(tk.END, "\n\n")
                     elif tag_lower in ('h1', 'h2', 'h3'):
-                        self.text.insert(tk.END, "\n")
+                        self.text.insert(tk.END, "\n\n")
                         self.tag_stack.append(tag_lower)
                     elif tag_lower in ('b', 'strong'):
                         self.tag_stack.append('bold')
@@ -731,21 +733,26 @@ class SearchWindow:
                         self.tag_stack.append('link')
                     elif tag_lower == 'pre':
                         self.tag_stack.append('pre')
-                        self.text.insert(tk.END, "\n")
+                        self.text.insert(tk.END, "\n\n")
                     elif tag_lower == 'blockquote':
                         self.tag_stack.append('quote')
-                        self.text.insert(tk.END, "\n")
+                        self.text.insert(tk.END, "\n\n")
                     elif tag_lower == 'div':
-                        # Check for style attributes
-                        for attr, value in attrs:
-                            if attr == 'style' and 'text-align: center' in value.lower():
-                                self.tag_stack.append('center')
-                                break
+                        # Add line break for divs
+                        self.text.insert(tk.END, "\n")
+                    elif tag_lower in ('table', 'tbody'):
+                        self.text.insert(tk.END, "\n")
+                    elif tag_lower == 'tr':
+                        self.text.insert(tk.END, "\n")
+                    elif tag_lower == 'td':
+                        self.text.insert(tk.END, "  ")
                     elif tag_lower in ('ul', 'ol'):
                         self.text.insert(tk.END, "\n")
                     elif tag_lower == 'li':
                         self.text.insert(tk.END, "\n  • ")
                     elif tag_lower == 'img':
+                        # Add spacing before image
+                        self.text.insert(tk.END, "\n")
                         # Handle images
                         self._handle_image(dict(attrs))
 
@@ -804,13 +811,15 @@ class SearchWindow:
 
                 def handle_endtag(self, tag):
                     tag_lower = tag.lower()
-                    if tag_lower in ('style', 'script'):
+                    if tag_lower in ('style', 'script', 'head', 'meta', 'link'):
                         self.skip_content = False
-                    elif tag_lower in ('p', 'h1', 'h2', 'h3', 'pre', 'blockquote', 'ul', 'ol'):
-                        self.text.insert(tk.END, "\n")
+                    elif tag_lower in ('p', 'h1', 'h2', 'h3', 'pre', 'blockquote', 'ul', 'ol', 'div', 'table'):
+                        if tag_lower != 'div':  # Don't add extra newlines for divs
+                            self.text.insert(tk.END, "\n")
+                        # Pop from tag stack if present
                         if self.tag_stack and self.tag_stack[-1] == tag_lower:
                             self.tag_stack.pop()
-                    elif tag_lower in ('b', 'strong', 'i', 'em', 'u', 'a', 'div'):
+                    elif tag_lower in ('b', 'strong', 'i', 'em', 'u', 'a', 'span'):
                         # Pop corresponding tag from stack
                         tag_map = {'b': 'bold', 'strong': 'bold', 'i': 'italic', 'em': 'italic', 'u': 'underline', 'a': 'link'}
                         expected_tag = tag_map.get(tag_lower, tag_lower)
@@ -822,12 +831,15 @@ class SearchWindow:
                                     break
 
                 def handle_data(self, data):
-                    if not self.skip_content and data.strip():
-                        # Apply current tags
-                        if self.tag_stack:
-                            self.text.insert(tk.END, data, tuple(self.tag_stack))
-                        else:
-                            self.text.insert(tk.END, data)
+                    if not self.skip_content:
+                        # Clean up excessive whitespace but preserve some spacing
+                        cleaned = ' '.join(data.split())
+                        if cleaned:
+                            # Apply current tags
+                            if self.tag_stack:
+                                self.text.insert(tk.END, cleaned, tuple(self.tag_stack))
+                            else:
+                                self.text.insert(tk.END, cleaned)
 
             renderer = SimpleHTMLRenderer(self._html_text, self._html_images)
             renderer.feed(html_content)
