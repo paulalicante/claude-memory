@@ -62,6 +62,7 @@ class SearchWindow:
         # HTML viewer state
         self._html_frame: Optional[tk.Frame] = None
         self._html_text: Optional[tk.Text] = None
+        self._html_images: List = []  # Store PhotoImage references to prevent garbage collection
 
     def _create_window(self) -> None:
         """Create the search window."""
@@ -667,6 +668,11 @@ class SearchWindow:
         """Show HTML email content in the detail pane with formatting."""
         import json
         from html.parser import HTMLParser
+        import base64
+        import io
+        from PIL import Image, ImageTk
+        import urllib.request
+        import urllib.error
 
         try:
             # Get HTML content from source_conversation field
@@ -684,9 +690,10 @@ class SearchWindow:
             self._detail_text.grid_remove()
             self._html_frame.grid(row=1, column=0, sticky="nsew")
 
-            # Clear previous content
+            # Clear previous content and images
             self._html_text.config(state=tk.NORMAL)
             self._html_text.delete("1.0", tk.END)
+            self._html_images.clear()
 
             # Add email header
             self._html_text.insert(tk.END, f"{entry.get('title', 'Email')}\n", "h2")
@@ -696,9 +703,10 @@ class SearchWindow:
 
             # Parse and render HTML
             class SimpleHTMLRenderer(HTMLParser):
-                def __init__(self, text_widget):
+                def __init__(self, text_widget, images_list):
                     super().__init__()
                     self.text = text_widget
+                    self.images = images_list
                     self.tag_stack = []
                     self.skip_content = False
 
@@ -737,6 +745,62 @@ class SearchWindow:
                         self.text.insert(tk.END, "\n")
                     elif tag_lower == 'li':
                         self.text.insert(tk.END, "\n  • ")
+                    elif tag_lower == 'img':
+                        # Handle images
+                        self._handle_image(dict(attrs))
+
+                def _handle_image(self, attrs):
+                    """Load and insert image into text widget."""
+                    src = attrs.get('src', '')
+                    if not src:
+                        return
+
+                    try:
+                        pil_image = None
+
+                        # Handle base64 inline images
+                        if src.startswith('data:image'):
+                            # Extract base64 data
+                            if ';base64,' in src:
+                                base64_data = src.split(';base64,')[1]
+                                image_data = base64.b64decode(base64_data)
+                                pil_image = Image.open(io.BytesIO(image_data))
+
+                        # Handle HTTP/HTTPS URLs
+                        elif src.startswith('http://') or src.startswith('https://'):
+                            try:
+                                with urllib.request.urlopen(src, timeout=3) as response:
+                                    image_data = response.read()
+                                    pil_image = Image.open(io.BytesIO(image_data))
+                            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
+                                # Failed to load image, skip it
+                                self.text.insert(tk.END, "[Image]")
+                                return
+
+                        # Handle CID references (Gmail inline images)
+                        elif src.startswith('cid:'):
+                            # Can't resolve CID without access to email MIME parts
+                            self.text.insert(tk.END, "[Inline Image]")
+                            return
+
+                        if pil_image:
+                            # Resize if too large (max width 600px)
+                            max_width = 600
+                            if pil_image.width > max_width:
+                                ratio = max_width / pil_image.width
+                                new_height = int(pil_image.height * ratio)
+                                pil_image = pil_image.resize((max_width, new_height), Image.Resampling.LANCZOS)
+
+                            # Convert to PhotoImage and insert
+                            photo = ImageTk.PhotoImage(pil_image)
+                            self.images.append(photo)  # Keep reference
+                            self.text.image_create(tk.END, image=photo)
+                            self.text.insert(tk.END, "\n")
+
+                    except Exception as e:
+                        # Failed to load/decode image
+                        print(f"Failed to load image: {e}")
+                        self.text.insert(tk.END, "[Image]")
 
                 def handle_endtag(self, tag):
                     tag_lower = tag.lower()
@@ -765,7 +829,7 @@ class SearchWindow:
                         else:
                             self.text.insert(tk.END, data)
 
-            renderer = SimpleHTMLRenderer(self._html_text)
+            renderer = SimpleHTMLRenderer(self._html_text, self._html_images)
             renderer.feed(html_content)
 
             self._html_text.config(state=tk.DISABLED)
@@ -793,8 +857,9 @@ class SearchWindow:
             widget.destroy()
         self._pdf_images.clear()
 
-        # Hide HTML viewer
+        # Hide HTML viewer and clear images
         self._html_frame.grid_remove()
+        self._html_images.clear()
 
         # Show text area by default
         self._detail_text.grid(row=1, column=0, sticky="nsew")
