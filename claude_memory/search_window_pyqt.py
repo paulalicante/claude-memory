@@ -317,7 +317,8 @@ class SearchWindow(QMainWindow):
         self.multi_select_checkbox.setStyleSheet("""
             QCheckBox {
                 color: #FDF6E3;
-                font-size: 12px;
+                background: transparent;
+                font-size: 11px;
                 spacing: 8px;
             }
             QCheckBox::indicator {
@@ -331,6 +332,9 @@ class SearchWindow(QMainWindow):
                 background: #268BD2;
                 border-color: #268BD2;
             }
+            QCheckBox::indicator:hover {
+                border-color: #93A1A1;
+            }
         """)
         self.multi_select_checkbox.stateChanged.connect(self._toggle_multi_select)
         layout.addWidget(self.multi_select_checkbox)
@@ -342,11 +346,10 @@ class SearchWindow(QMainWindow):
         layout.addWidget(actions_label)
 
         btn_search = QPushButton("🔍 Search")
-        btn_search.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         btn_search.clicked.connect(self._do_search)
         layout.addWidget(btn_search)
 
-        btn_add = QPushButton("+ Add Entry")
+        btn_add = QPushButton("+ Clipboard")
         btn_add.clicked.connect(self._show_quick_add)
         layout.addWidget(btn_add)
 
