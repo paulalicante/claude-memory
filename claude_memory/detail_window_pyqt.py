@@ -216,7 +216,7 @@ class DetailWindow(QWidget):
         self.text_viewer.setReadOnly(True)
         self.text_viewer.setStyleSheet("""
             QTextEdit {
-                background: white;
+                background: #FDF6E3;
                 color: #073642;
                 border: 1px solid #D3CBB7;
                 border-radius: 6px;
@@ -291,7 +291,7 @@ class DetailWindow(QWidget):
         self.text_viewer.setReadOnly(True)
         self.text_viewer.setStyleSheet("""
             QTextEdit {
-                background: white;
+                background: #FDF6E3;
                 color: #073642;
                 border: 1px solid #D3CBB7;
                 border-radius: 6px;
@@ -348,7 +348,7 @@ class DetailWindow(QWidget):
                 # Create label for image
                 label = QLabel()
                 label.setPixmap(pixmap)
-                label.setStyleSheet("background: white; padding: 10px; border: 1px solid #D3CBB7; border-radius: 6px;")
+                label.setStyleSheet("background: #FDF6E3; padding: 10px; border: 1px solid #D3CBB7; border-radius: 6px;")
                 self.content_layout.addWidget(label)
 
                 if i < len(page_images) - 1:
@@ -398,7 +398,7 @@ class DetailWindow(QWidget):
                     body {{
                         font-family: 'Segoe UI', Arial, sans-serif;
                         margin: 15px;
-                        background: white;
+                        background: #FDF6E3;
                     }}
                     .email-header {{
                         background: #f5f5f5;

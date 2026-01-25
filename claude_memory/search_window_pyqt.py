@@ -345,10 +345,6 @@ class SearchWindow(QMainWindow):
         actions_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Medium))
         layout.addWidget(actions_label)
 
-        btn_search = QPushButton("🔍 Search")
-        btn_search.clicked.connect(self._do_search)
-        layout.addWidget(btn_search)
-
         btn_add = QPushButton("+ Clipboard")
         btn_add.clicked.connect(self._show_quick_add)
         layout.addWidget(btn_add)
@@ -406,9 +402,9 @@ class SearchWindow(QMainWindow):
             QListWidget::item {
                 background: #FDF6E3;
                 border: 1px solid #D3CBB7;
-                border-radius: 6px;
-                padding: 15px;
-                margin: 8px;
+                border-radius: 4px;
+                padding: 8px 12px;
+                margin: 4px;
                 color: #073642;
             }
             QListWidget::item:selected {
@@ -424,6 +420,8 @@ class SearchWindow(QMainWindow):
 
         self.results_list.itemDoubleClicked.connect(self._on_double_click)
         self.results_list.itemClicked.connect(self._on_select)
+        self.results_list.setMouseTracking(True)
+        self.results_list.itemEntered.connect(self._on_item_hover)
         layout.addWidget(self.results_list)
 
         # Checkbox scroll area (for multi-select mode)
@@ -496,8 +494,8 @@ class SearchWindow(QMainWindow):
             category = entry.get('category', 'Uncategorized')
             date = entry.get('created_at', '')
 
-            item = QListWidgetItem(f"{title}\n{category} • {date}")
-            item.setFont(QFont("Segoe UI", 11))
+            item = QListWidgetItem(f"{title} • {category} • {date}")
+            item.setFont(QFont("Segoe UI", 10))
             item.setData(Qt.ItemDataRole.UserRole, entry)
             self.results_list.addItem(item)
 
@@ -517,6 +515,26 @@ class SearchWindow(QMainWindow):
         """Callback when an entry is deleted from detail window"""
         # Refresh the search results
         self._do_search()
+
+    def _on_item_hover(self, item):
+        """Show tooltip with first 3 lines when hovering over an item"""
+        if not item:
+            return
+
+        entry = item.data(Qt.ItemDataRole.UserRole)
+        if not entry:
+            return
+
+        content = entry.get('content', '')
+        lines = content.split('\n')
+        preview_lines = lines[:3]
+        preview = '\n'.join(preview_lines)
+
+        if len(lines) > 3:
+            preview += '\n...'
+
+        # Set tooltip with preview
+        item.setToolTip(preview)
 
     def _delete_selected(self):
         """Delete selected entry"""
