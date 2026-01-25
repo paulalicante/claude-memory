@@ -18,7 +18,7 @@ A Windows desktop application that captures and stores important information fro
 
 ## Tech Stack
 
-- **Python 3** with tkinter (UI), pystray (tray), pyperclip (clipboard), keyboard (hotkeys)
+- **Python 3** with PyQt6 (modern UI), tkinter (legacy UI), pystray (tray), pyperclip (clipboard), keyboard (hotkeys)
 - **SQLite** with FTS5 for full-text search
 - **Anthropic SDK** for AI features (BYOK - user provides API key)
 - **FastMCP** for Model Context Protocol server
@@ -58,7 +58,9 @@ claude_memory/           # Main package
 ├── notifications.py    # Toast notifications
 ├── ai_query.py         # Claude API integration
 ├── tray.py             # System tray UI
-├── search_window.py    # Search/browse UI
+├── search_window.py    # Search/browse UI (tkinter - legacy)
+├── search_window_pyqt.py # Search/browse UI (PyQt6 - new)
+├── detail_window.py    # Detail/edit window (PyQt6)
 ├── chat_window.py      # AI chat UI
 ├── http_server.py      # HTTP server for browser extensions
 └── pdf_handler.py      # PDF import and text extraction
@@ -171,6 +173,58 @@ The `gmail-memory-extension/` folder contains a Chrome extension for Gmail:
 - **Watchdog**: Monitors keyboard hooks, auto-recovers if lost
 - **Crash Logging**: Writes errors to `crash.log` for debugging
 - Handles desktop switching without crashing
+
+## UI Migration to PyQt6 (In Progress)
+
+### Current Status
+A new PyQt6-based UI is being developed alongside the existing tkinter UI. The new design features:
+- **Solarized Light color scheme** - Warm cream/beige backgrounds (#FDF6E3, #EEE8D5)
+- **Custom title bar** - Frameless window with draggable custom chrome (Windows 10 compatible)
+- **Dark sidebar** (#073642) with light cream buttons (#586E75) and accent blue (#268BD2)
+- **No menu bar** - All actions consolidated in sidebar to avoid clutter
+- **Modern controls** - Search with clear (X) button, styled dropdowns, rounded corners
+
+### Files
+- `claude_memory/search_window_pyqt.py` - New PyQt6 search window (✅ Complete)
+- `claude_memory/detail_window.py` - Detail/edit window (⚠️ Needs PyQt6 version)
+- `test_pyqt_ui.py` - Test launcher for PyQt6 UI
+
+### Completed Features
+- ✅ Custom title bar with minimize/maximize/close buttons
+- ✅ Window dragging from title bar
+- ✅ Solarized Light color scheme throughout
+- ✅ Search field with clear (X) button and auto-refresh
+- ✅ Category dropdown with visible arrow indicator
+- ✅ Styled dropdown (dark button, light popup list)
+- ✅ Results list with hover and selection states
+- ✅ Database integration (search, recent entries, delete)
+- ✅ Status bar with entry count
+
+### Outstanding Tasks
+- ⬜ Implement Quick Add dialog in PyQt6
+- ⬜ Implement PDF import dialog in PyQt6
+- ⬜ Port detail window to PyQt6 (currently uses placeholder)
+- ⬜ Port chat window to PyQt6
+- ⬜ Add multi-select checkboxes functionality
+- ⬜ Implement "Remove Duplicates" feature in PyQt6
+- ⬜ Add AI Summarize integration to PyQt6 UI
+- ⬜ Implement auto-refresh timer
+- ⬜ Update main.py to launch PyQt6 UI instead of tkinter
+- ⬜ Test all functionality (tray integration, hotkeys, clipboard monitoring)
+- ⬜ Migration path for existing users
+
+### Color Reference (Solarized Light)
+- Background cream: `#FDF6E3`
+- Lighter cream: `#EEE8D5`
+- Borders/dividers: `#D3CBB7`
+- Dark sidebar: `#073642`
+- Darker sidebar: `#002B36`
+- Sidebar buttons: `#586E75`
+- Lighter gray: `#657B83`
+- Medium gray text: `#93A1A1`
+- Accent blue: `#268BD2`
+- Text on light: `#073642`
+- Text on dark: `#FDF6E3`
 
 ## Constants
 

@@ -28,3 +28,11 @@ numpy>=1.24.0                # Required for face encodings
 # Alternative backends (if you have specific requirements):
 # deepface>=0.0.79           # Requires tensorflow (not compatible with Python 3.14 yet)
 # face_recognition           # Requires dlib compilation (needs Visual Studio Build Tools)
+
+# HTML rendering (for email viewer)
+tkinterweb>=4.0.0          # HTML/CSS rendering widget for tkinter
+
+# Modern UI theme
+ttkbootstrap>=1.20.0       # Bootstrap-inspired modern themes for tkinter
+PyQt6>=6.6.0               # Modern Qt6 framework for PyQt6 version
+PyQt6-WebEngine>=6.6.0     # HTML rendering for PyQt6 (email viewer)
