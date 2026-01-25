@@ -199,16 +199,16 @@ A new PyQt6-based UI is being developed alongside the existing tkinter UI. The n
 - ✅ Results list with hover and selection states
 - ✅ Database integration (search, recent entries, delete)
 - ✅ Status bar with entry count
+- ✅ Detail window with text/PDF/HTML viewing
+- ✅ Quick Add dialog for creating entries
+- ✅ PDF Import dialog with preview
+- ✅ Multi-select checkboxes functionality
+- ✅ Remove Duplicates feature (line-by-line merge)
+- ✅ Auto-refresh timer (2-second interval)
 
 ### Outstanding Tasks
-- ⬜ Implement Quick Add dialog in PyQt6
-- ⬜ Implement PDF import dialog in PyQt6
-- ⬜ Port detail window to PyQt6 (currently uses placeholder)
 - ⬜ Port chat window to PyQt6
-- ⬜ Add multi-select checkboxes functionality
-- ⬜ Implement "Remove Duplicates" feature in PyQt6
 - ⬜ Add AI Summarize integration to PyQt6 UI
-- ⬜ Implement auto-refresh timer
 - ⬜ Update main.py to launch PyQt6 UI instead of tkinter
 - ⬜ Test all functionality (tray integration, hotkeys, clipboard monitoring)
 - ⬜ Migration path for existing users

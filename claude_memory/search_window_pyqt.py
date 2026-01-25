@@ -6,7 +6,7 @@ Drop-in replacement for tkinter search_window.py
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                               QHBoxLayout, QLabel, QPushButton, QLineEdit,
                               QTextEdit, QListWidget, QListWidgetItem, QFrame,
-                              QComboBox, QCheckBox, QSplitter, QMessageBox)
+                              QComboBox, QCheckBox, QSplitter, QMessageBox, QScrollArea)
 from PyQt6.QtCore import Qt, QPoint, QTimer
 from PyQt6.QtGui import QFont, QMouseEvent
 from typing import Optional, List
@@ -142,6 +142,10 @@ class SearchWindow(QMainWindow):
 
         # Detail window
         self._detail_window = DetailWindow()
+
+        # Multi-select state
+        self._multi_select_mode = False
+        self._check_widgets = []  # List of (checkbox, entry, widget) tuples
 
         # Frameless window
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
@@ -307,8 +311,32 @@ class SearchWindow(QMainWindow):
         self.category_combo.currentTextChanged.connect(self._do_search)
         layout.addWidget(self.category_combo)
 
-        # Actions
+        # Multi-select checkbox
         layout.addSpacing(20)
+        self.multi_select_checkbox = QCheckBox("Multi-Select Mode")
+        self.multi_select_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #FDF6E3;
+                font-size: 12px;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #657B83;
+                border-radius: 3px;
+                background: #586E75;
+            }
+            QCheckBox::indicator:checked {
+                background: #268BD2;
+                border-color: #268BD2;
+            }
+        """)
+        self.multi_select_checkbox.stateChanged.connect(self._toggle_multi_select)
+        layout.addWidget(self.multi_select_checkbox)
+
+        # Actions
+        layout.addSpacing(10)
         actions_label = QLabel("Actions")
         actions_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Medium))
         layout.addWidget(actions_label)
@@ -326,9 +354,21 @@ class SearchWindow(QMainWindow):
         btn_pdf.clicked.connect(self._import_pdf)
         layout.addWidget(btn_pdf)
 
-        btn_delete = QPushButton("🗑 Delete Selected")
-        btn_delete.clicked.connect(self._delete_selected)
-        layout.addWidget(btn_delete)
+        # Multi-select buttons (hidden initially)
+        self.btn_delete_multi = QPushButton("🗑 Delete Selected")
+        self.btn_delete_multi.clicked.connect(self._delete_multiple)
+        self.btn_delete_multi.setVisible(False)
+        layout.addWidget(self.btn_delete_multi)
+
+        self.btn_remove_dupes = QPushButton("🔗 Remove Duplicates")
+        self.btn_remove_dupes.clicked.connect(self._remove_duplicates)
+        self.btn_remove_dupes.setVisible(False)
+        layout.addWidget(self.btn_remove_dupes)
+
+        # Single-select buttons
+        self.btn_delete = QPushButton("🗑 Delete Selected")
+        self.btn_delete.clicked.connect(self._delete_selected)
+        layout.addWidget(self.btn_delete)
 
         btn_refresh = QPushButton("↻ Refresh")
         btn_refresh.clicked.connect(self._refresh)
@@ -382,6 +422,45 @@ class SearchWindow(QMainWindow):
         self.results_list.itemDoubleClicked.connect(self._on_double_click)
         self.results_list.itemClicked.connect(self._on_select)
         layout.addWidget(self.results_list)
+
+        # Checkbox scroll area (for multi-select mode)
+        self.checkbox_scroll = QScrollArea()
+        self.checkbox_scroll.setWidgetResizable(True)
+        self.checkbox_scroll.setStyleSheet("""
+            QScrollArea {
+                background: #EEE8D5;
+                border: none;
+            }
+        """)
+
+        # Container for checkboxes
+        self.checkbox_container = QWidget()
+        self.checkbox_layout = QVBoxLayout(self.checkbox_container)
+        self.checkbox_layout.setContentsMargins(10, 10, 10, 10)
+        self.checkbox_layout.setSpacing(5)
+        self.checkbox_layout.addStretch()
+
+        self.checkbox_scroll.setWidget(self.checkbox_container)
+        layout.addWidget(self.checkbox_scroll)
+        self.checkbox_scroll.setVisible(False)  # Hidden by default
+
+        # Multi-select notice
+        self.multi_select_notice = QLabel("⚠ Multi-select mode is active")
+        self.multi_select_notice.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.multi_select_notice.setStyleSheet("""
+            QLabel {
+                background: #FFF3E0;
+                color: #FF6600;
+                font-size: 12pt;
+                font-weight: bold;
+                padding: 20px;
+                border: 2px solid #FFB74D;
+                border-radius: 6px;
+                margin: 10px;
+            }
+        """)
+        layout.addWidget(self.multi_select_notice)
+        self.multi_select_notice.setVisible(False)  # Hidden by default
 
         return center
 
@@ -466,11 +545,232 @@ class SearchWindow(QMainWindow):
         """Import PDF"""
         PDFImportDialog(self, on_save_callback=self._do_search)
 
+    def _toggle_multi_select(self):
+        """Toggle between single and multi-select mode"""
+        self._multi_select_mode = self.multi_select_checkbox.isChecked()
+
+        if self._multi_select_mode:
+            # Enable multi-select
+            self.results_list.setVisible(False)
+            self.checkbox_scroll.setVisible(True)
+            self.multi_select_notice.setVisible(True)
+
+            # Show multi-select buttons, hide single-select button
+            self.btn_delete_multi.setVisible(True)
+            self.btn_remove_dupes.setVisible(True)
+            self.btn_delete.setVisible(False)
+
+            # Populate checkboxes
+            self._populate_checkboxes()
+        else:
+            # Disable multi-select
+            self.results_list.setVisible(True)
+            self.checkbox_scroll.setVisible(False)
+            self.multi_select_notice.setVisible(False)
+
+            # Hide multi-select buttons, show single-select button
+            self.btn_delete_multi.setVisible(False)
+            self.btn_remove_dupes.setVisible(False)
+            self.btn_delete.setVisible(True)
+
+            # Clear checkboxes
+            self._check_widgets.clear()
+
+    def _populate_checkboxes(self):
+        """Populate the checkbox view with current results"""
+        # Clear existing checkboxes
+        while self.checkbox_layout.count() > 1:  # Keep the stretch
+            child = self.checkbox_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        self._check_widgets.clear()
+
+        # Create checkbox for each result
+        for i, entry in enumerate(self._results):
+            # Create frame for this row
+            row_frame = QFrame()
+            row_frame.setStyleSheet(f"""
+                QFrame {{
+                    background: {'#FDF6E3' if i % 2 == 0 else '#EEE8D5'};
+                    border: 1px solid #D3CBB7;
+                    border-radius: 4px;
+                    padding: 8px;
+                }}
+                QFrame:hover {{
+                    background: #F5EDDA;
+                    border: 1px solid #93A1A1;
+                }}
+            """)
+
+            row_layout = QHBoxLayout(row_frame)
+            row_layout.setContentsMargins(5, 5, 5, 5)
+
+            # Checkbox
+            checkbox = QCheckBox()
+            checkbox.setStyleSheet("""
+                QCheckBox::indicator {
+                    width: 20px;
+                    height: 20px;
+                    border: 2px solid #657B83;
+                    border-radius: 3px;
+                    background: white;
+                }
+                QCheckBox::indicator:checked {
+                    background: #268BD2;
+                    border-color: #268BD2;
+                }
+            """)
+            row_layout.addWidget(checkbox)
+
+            # Entry label - clickable to view
+            title = entry.get('title', 'Untitled')
+            category = entry.get('category', 'Uncategorized')
+            date = entry.get('created_at', '')
+
+            label = QLabel(f"{title}\n{category} • {date}")
+            label.setStyleSheet("color: #073642; font-size: 11pt; background: transparent; border: none;")
+            label.setWordWrap(True)
+            label.setCursor(Qt.CursorShape.PointingHandCursor)
+            label.mousePressEvent = lambda e, ent=entry: self._on_checkbox_label_click(ent)
+            row_layout.addWidget(label, 1)
+
+            self.checkbox_layout.insertWidget(self.checkbox_layout.count() - 1, row_frame)
+            self._check_widgets.append((checkbox, entry, row_frame))
+
+    def _on_checkbox_label_click(self, entry):
+        """Handle click on checkbox label to view entry"""
+        self._detail_window.show_entry(entry, on_delete_callback=self._on_entry_deleted)
+
+    def _get_checked_entries(self):
+        """Get list of checked entries"""
+        return [entry for checkbox, entry, _ in self._check_widgets if checkbox.isChecked()]
+
+    def _delete_multiple(self):
+        """Delete all checked entries"""
+        checked = self._get_checked_entries()
+
+        if not checked:
+            QMessageBox.warning(self, "No Selection", "Please select entries to delete.")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete {len(checked)} selected entries?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            for entry in checked:
+                delete_entry(entry['id'])
+            self._do_search()
+
+    def _remove_duplicates(self):
+        """Merge duplicate entries line-by-line"""
+        checked = self._get_checked_entries()
+
+        if len(checked) < 2:
+            QMessageBox.warning(
+                self,
+                "Insufficient Selection",
+                "Please select at least 2 duplicate entries to merge."
+            )
+            return
+
+        # Confirm merge
+        titles = [e.get('title', 'Untitled') for e in checked]
+        reply = QMessageBox.question(
+            self,
+            "Confirm Merge",
+            f"Merge {len(checked)} entries?\n\n" + "\n".join(f"• {t}" for t in titles[:5]) +
+            (f"\n...and {len(titles) - 5} more" if len(titles) > 5 else ""),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Merge content line-by-line, keeping only unique lines
+        all_lines = []
+        for entry in checked:
+            content = entry.get('content', '')
+            lines = content.split('\n')
+            all_lines.extend(lines)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_lines = []
+        for line in all_lines:
+            line_stripped = line.strip()
+            if line_stripped and line_stripped not in seen:
+                seen.add(line_stripped)
+                unique_lines.append(line)
+
+        merged_content = '\n'.join(unique_lines)
+
+        # Create new merged entry
+        merged_title = f"[Merged] {checked[0].get('title', 'Untitled')}"
+        merged_category = checked[0].get('category', 'note')
+
+        add_entry(
+            title=merged_title,
+            content=merged_content,
+            category=merged_category,
+            tags="merged"
+        )
+
+        # Delete original entries
+        for entry in checked:
+            delete_entry(entry['id'])
+
+        QMessageBox.information(
+            self,
+            "Merge Complete",
+            f"Merged {len(checked)} entries into 1 entry with {len(unique_lines)} unique lines."
+        )
+
+        self._do_search()
+
+    def _start_auto_refresh(self):
+        """Start auto-refresh timer to check for new entries"""
+        # Initialize last entry ID
+        try:
+            recent = get_recent_entries(limit=1)
+            if recent:
+                self._last_entry_id = recent[0]['id']
+        except Exception:
+            pass
+
+        # Start timer (check every 2 seconds)
+        if not self._auto_refresh_timer:
+            self._auto_refresh_timer = QTimer()
+            self._auto_refresh_timer.timeout.connect(self._check_for_updates)
+            self._auto_refresh_timer.start(2000)  # 2000ms = 2 seconds
+
+    def _stop_auto_refresh(self):
+        """Stop auto-refresh timer"""
+        if self._auto_refresh_timer:
+            self._auto_refresh_timer.stop()
+
+    def _check_for_updates(self):
+        """Check if new entries exist and refresh if needed"""
+        try:
+            # Get the most recent entry
+            recent = get_recent_entries(limit=1)
+            if recent and recent[0]['id'] > self._last_entry_id:
+                # New entry detected - refresh
+                self._last_entry_id = recent[0]['id']
+                self._do_search()
+        except Exception as e:
+            print(f"Error checking for updates: {e}")
+
     def show(self):
         """Show window"""
         super().show()
         self._refresh_categories()
         self._do_search()
+        self._start_auto_refresh()
 
     def hide(self):
         """Hide window"""
