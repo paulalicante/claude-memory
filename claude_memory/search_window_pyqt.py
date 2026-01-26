@@ -19,6 +19,29 @@ from .quick_add_dialog import QuickAddDialog
 from .pdf_import_dialog import PDFImportDialog
 
 
+class HoverPreview(QLabel):
+    """Custom hover preview widget with fixed size"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.setFixedSize(300, 200)
+        self.setWordWrap(True)
+        self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.setStyleSheet("""
+            QLabel {
+                background: #FDF6E3;
+                color: #073642;
+                border: 2px solid #268BD2;
+                border-radius: 6px;
+                padding: 12px;
+                font-size: 10pt;
+                font-family: 'Segoe UI';
+            }
+        """)
+        self.hide()
+
+
 class CustomTitleBar(QWidget):
     """Custom title bar widget for frameless window"""
 
@@ -142,6 +165,9 @@ class SearchWindow(QMainWindow):
 
         # Detail window
         self._detail_window = DetailWindow()
+
+        # Hover preview
+        self._hover_preview = HoverPreview(self)
 
         # Multi-select state
         self._multi_select_mode = False
@@ -421,6 +447,7 @@ class SearchWindow(QMainWindow):
         self.results_list.itemClicked.connect(self._on_item_click)
         self.results_list.setMouseTracking(True)
         self.results_list.itemEntered.connect(self._on_item_hover)
+        self.results_list.installEventFilter(self)
         layout.addWidget(self.results_list)
 
         # Checkbox scroll area (for multi-select mode)
@@ -516,25 +543,48 @@ class SearchWindow(QMainWindow):
         # Refresh the search results
         self._do_search()
 
+    def eventFilter(self, obj, event):
+        """Handle events for the results list - hide preview on mouse leave"""
+        if obj == self.results_list and event.type() == event.Type.Leave:
+            self._hover_preview.hide()
+        return super().eventFilter(obj, event)
+
     def _on_item_hover(self, item):
-        """Show tooltip with first 3 lines when hovering over an item"""
+        """Show custom preview when hovering over an item"""
         if not item:
+            self._hover_preview.hide()
             return
 
         entry = item.data(Qt.ItemDataRole.UserRole)
         if not entry:
+            self._hover_preview.hide()
             return
 
+        # Get content and format for fixed-size preview
         content = entry.get('content', '')
-        lines = content.split('\n')
-        preview_lines = lines[:3]
-        preview = '\n'.join(preview_lines)
+        # Limit to reasonable character count that fits in the box
+        preview_text = content[:400]
+        if len(content) > 400:
+            preview_text += '...'
 
-        if len(lines) > 3:
-            preview += '\n...'
+        # Update preview text
+        self._hover_preview.setText(preview_text)
 
-        # Set tooltip with preview
-        item.setToolTip(preview)
+        # Position preview near cursor, offset to the right and down
+        cursor_pos = self.mapFromGlobal(self.cursor().pos())
+        preview_x = cursor_pos.x() + 20
+        preview_y = cursor_pos.y() + 20
+
+        # Make sure it doesn't go off screen
+        if preview_x + 300 > self.width():
+            preview_x = cursor_pos.x() - 320
+
+        if preview_y + 200 > self.height():
+            preview_y = cursor_pos.y() - 220
+
+        self._hover_preview.move(preview_x, preview_y)
+        self._hover_preview.show()
+        self._hover_preview.raise_()
 
     def _delete_selected(self):
         """Delete selected entry"""
