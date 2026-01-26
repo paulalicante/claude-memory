@@ -400,6 +400,10 @@ class SearchWindow(QMainWindow):
         btn_files.clicked.connect(self._launch_file_discovery)
         layout.addWidget(btn_files)
 
+        btn_save_convo = QPushButton("💬 Save Conversation")
+        btn_save_convo.clicked.connect(self._save_conversation)
+        layout.addWidget(btn_save_convo)
+
         # Multi-select buttons (hidden initially)
         self.btn_delete_multi = QPushButton("🗑 Delete Selected")
         self.btn_delete_multi.clicked.connect(self._delete_multiple)
@@ -808,6 +812,93 @@ class SearchWindow(QMainWindow):
             self._do_search()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to import file:\n{str(e)}")
+
+    def _save_conversation(self):
+        """Save current Claude Code conversation to memory"""
+        import json
+        import os
+        from pathlib import Path
+        from datetime import datetime
+
+        try:
+            # Find the most recent conversation file in .claude/projects
+            home = Path.home()
+            claude_dir = home / '.claude' / 'projects'
+
+            if not claude_dir.exists():
+                QMessageBox.warning(self, "Not Found", "No Claude Code conversations found.")
+                return
+
+            # Get current working directory to find the right project folder
+            cwd = Path(os.getcwd()).resolve()
+
+            # Find all project folders
+            project_folders = [f for f in claude_dir.iterdir() if f.is_dir()]
+
+            # Find most recent .jsonl file across all projects
+            latest_file = None
+            latest_time = 0
+
+            for project_folder in project_folders:
+                jsonl_files = list(project_folder.glob('*.jsonl'))
+                for file in jsonl_files:
+                    mtime = file.stat().st_mtime
+                    if mtime > latest_time:
+                        latest_time = mtime
+                        latest_file = file
+
+            if not latest_file:
+                QMessageBox.warning(self, "Not Found", "No conversation transcript found.")
+                return
+
+            # Read and parse the conversation
+            messages = []
+            with open(latest_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        msg = json.loads(line)
+                        messages.append(msg)
+
+            # Format the conversation
+            conversation_text = []
+            for msg in messages:
+                role = msg.get('role', '').upper()
+                content = msg.get('content', '')
+
+                # Handle different content types
+                if isinstance(content, list):
+                    text_parts = []
+                    for item in content:
+                        if isinstance(item, dict) and item.get('type') == 'text':
+                            text_parts.append(item.get('text', ''))
+                    content = '\n'.join(text_parts)
+
+                if content.strip():
+                    conversation_text.append(f"[{role}]\n{content}\n")
+
+            full_conversation = '\n'.join(conversation_text)
+
+            # Create title with date
+            date_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+            title = f"Claude Conversation - {date_str}"
+
+            # Save to database
+            add_entry(
+                title=title,
+                content=full_conversation,
+                category="Conversation",
+                tags="claude,ai,chat"
+            )
+
+            QMessageBox.information(
+                self,
+                "Saved",
+                f"Conversation saved to memory!\n\nTitle: {title}\nMessages: {len(messages)}"
+            )
+            self._do_search()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save conversation:\n{str(e)}")
 
     def _toggle_multi_select(self):
         """Toggle between single and multi-select mode"""
