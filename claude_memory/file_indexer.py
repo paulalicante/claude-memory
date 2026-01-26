@@ -68,7 +68,7 @@ def should_skip_directory(dir_name: str) -> bool:
 def extract_text_preview(file_path: Path, max_chars: int = 1000) -> str:
     """
     Extract preview text from a file.
-    For now, handles plain text files. Will be extended for docx, xlsx, pdf.
+    Supports plain text, Word docs, Excel sheets, and PDFs.
     """
     try:
         ext = file_path.suffix.lower()
@@ -89,14 +89,53 @@ def extract_text_preview(file_path: Path, max_chars: int = 1000) -> str:
                 except:
                     return "[Binary or unreadable file]"
 
-        # TODO: Add support for .docx, .xlsx, .pdf using libraries
-        # For now, just note the file type
+        # Word documents
         elif ext == '.docx':
-            return "[Word document - full indexing coming soon]"
+            try:
+                from docx import Document
+                doc = Document(file_path)
+                text = '\n'.join([para.text for para in doc.paragraphs])
+                return text[:max_chars] if text else "[Empty Word document]"
+            except Exception as e:
+                return f"[Error reading Word doc: {str(e)[:50]}]"
+
+        # Excel spreadsheets
         elif ext in {'.xlsx', '.xls'}:
-            return "[Excel spreadsheet - full indexing coming soon]"
+            try:
+                from openpyxl import load_workbook
+                wb = load_workbook(file_path, read_only=True, data_only=True)
+                text_parts = []
+
+                # Read first sheet only for preview
+                ws = wb.active
+                for row in ws.iter_rows(max_row=20, values_only=True):
+                    row_text = ' | '.join([str(cell) if cell is not None else '' for cell in row])
+                    if row_text.strip():
+                        text_parts.append(row_text)
+
+                wb.close()
+                text = '\n'.join(text_parts)
+                return text[:max_chars] if text else "[Empty Excel sheet]"
+            except Exception as e:
+                return f"[Error reading Excel: {str(e)[:50]}]"
+
+        # PDF documents
         elif ext == '.pdf':
-            return "[PDF document - full indexing coming soon]"
+            try:
+                import fitz  # PyMuPDF
+                doc = fitz.open(file_path)
+                text_parts = []
+
+                # Extract text from first 3 pages for preview
+                for page_num in range(min(3, len(doc))):
+                    page = doc[page_num]
+                    text_parts.append(page.get_text())
+
+                doc.close()
+                text = '\n'.join(text_parts)
+                return text[:max_chars] if text else "[Empty or image-only PDF]"
+            except Exception as e:
+                return f"[Error reading PDF: {str(e)[:50]}]"
         else:
             return "[Supported file type]"
 
