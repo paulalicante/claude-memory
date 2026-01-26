@@ -11,6 +11,8 @@ from PyQt6.QtCore import Qt, QPoint, QTimer
 from PyQt6.QtGui import QFont, QMouseEvent
 from typing import Optional, List
 import sys
+import html
+import re
 
 from . import constants
 from .database import search_entries, get_categories, get_entry_by_id, get_recent_entries, delete_entry, add_entry
@@ -28,6 +30,7 @@ class HoverPreview(QLabel):
         self.setFixedSize(300, 200)
         self.setWordWrap(True)
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.setTextFormat(Qt.TextFormat.RichText)  # Enable HTML formatting
         self.setStyleSheet("""
             QLabel {
                 background: #FDF6E3;
@@ -622,8 +625,31 @@ class SearchWindow(QMainWindow):
             if len(content) > 400:
                 preview_text += '...'
 
-        # Update preview text
-        self._hover_preview.setText(preview_text)
+        # Update preview text with highlighting if there's a search query
+        if search_query:
+            # Escape HTML characters in the preview text
+            escaped_text = html.escape(preview_text)
+
+            # Highlight all occurrences of the search term (case-insensitive)
+            # Use a case-insensitive regex replacement
+            def highlight_match(match):
+                return f'<span style="background-color: #B58900; color: #FDF6E3; font-weight: bold; padding: 2px 4px; border-radius: 3px;">{match.group(0)}</span>'
+
+            highlighted_text = re.sub(
+                re.escape(search_query),
+                highlight_match,
+                escaped_text,
+                flags=re.IGNORECASE
+            )
+
+            # Wrap in HTML with proper styling
+            formatted_text = f'<div style="color: #073642; font-family: Segoe UI; font-size: 10pt;">{highlighted_text}</div>'
+            self._hover_preview.setText(formatted_text)
+        else:
+            # No search query - just escape HTML and display plain
+            escaped_text = html.escape(preview_text)
+            formatted_text = f'<div style="color: #073642; font-family: Segoe UI; font-size: 10pt;">{escaped_text}</div>'
+            self._hover_preview.setText(formatted_text)
 
         # Position preview near cursor using global coordinates
         from PyQt6.QtGui import QGuiApplication
