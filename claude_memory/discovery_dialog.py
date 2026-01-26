@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 
-from .file_indexer import scan_directory, add_watched_folder, index_files, get_file_type_icon
+from .file_indexer import scan_directory, add_watched_folder, index_files, get_file_type_icon, get_watched_folders, remove_watched_folder
 
 
 class ScanWorker(QThread):
@@ -141,12 +141,56 @@ class DiscoveryDialog(QDialog):
         main_layout.addWidget(header)
 
         desc = QLabel(
-            "Select a folder to scan. The scanner will recursively search all subfolders "
-            "for text files, PDFs, Word docs, Excel sheets, code files, and more."
+            "Select folders to scan and index. You can add multiple folders in one session."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #586E75; font-size: 9pt;")
         main_layout.addWidget(desc)
+
+        # Indexed folders list (at top)
+        self.indexed_group = QGroupBox("Currently Indexed Folders")
+        self.indexed_group.setVisible(False)
+        indexed_layout = QVBoxLayout(self.indexed_group)
+
+        self.indexed_list = QTreeWidget()
+        self.indexed_list.setHeaderLabels(["📁 Folder", "Files", "Monitored"])
+        self.indexed_list.setColumnWidth(0, 400)
+        self.indexed_list.setMaximumHeight(150)
+        self.indexed_list.setStyleSheet("""
+            QTreeWidget {
+                background: white;
+                color: #073642;
+                border: 1px solid #D3CBB7;
+                border-radius: 6px;
+                font-size: 9pt;
+            }
+            QTreeWidget::item {
+                padding: 3px;
+            }
+        """)
+        indexed_layout.addWidget(self.indexed_list)
+
+        remove_btn_layout = QHBoxLayout()
+        remove_btn_layout.addStretch()
+        self.remove_folder_btn = QPushButton("Remove Selected")
+        self.remove_folder_btn.setStyleSheet("""
+            QPushButton {
+                background: #DC322F;
+                padding: 5px 10px;
+                font-size: 9pt;
+            }
+            QPushButton:hover {
+                background: #CB4B16;
+            }
+        """)
+        self.remove_folder_btn.clicked.connect(self._remove_selected_folder)
+        remove_btn_layout.addWidget(self.remove_folder_btn)
+        indexed_layout.addLayout(remove_btn_layout)
+
+        main_layout.addWidget(self.indexed_group)
+
+        # Load existing indexed folders
+        self._refresh_indexed_folders()
 
         # Folder selection
         folder_group = QGroupBox("Step 1: Choose Folder to Scan")
@@ -298,18 +342,18 @@ class DiscoveryDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setStyleSheet("""
+        done_btn = QPushButton("Done")
+        done_btn.setStyleSheet("""
             QPushButton {
-                background: #93A1A1;
+                background: #859900;
                 color: white;
             }
             QPushButton:hover {
-                background: #657B83;
+                background: #719E00;
             }
         """)
-        cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_btn)
+        done_btn.clicked.connect(self.accept)
+        button_layout.addWidget(done_btn)
 
         self.index_btn = QPushButton("Index Selected Files")
         self.index_btn.setEnabled(False)
@@ -532,11 +576,15 @@ class DiscoveryDialog(QDialog):
             QMessageBox.information(
                 self,
                 "Indexing Complete",
-                f"Successfully indexed {count} files!\n\n"
-                f"You can now search these files from the main search window."
+                f"Successfully indexed {count} files from:\n{self.scanned_folder}\n\n"
+                f"You can add more folders or click Done to finish."
             )
 
-            self.accept()
+            # Refresh the indexed folders list
+            self._refresh_indexed_folders()
+
+            # Reset UI for next folder
+            self._reset_scan_ui()
 
         except Exception as e:
             QMessageBox.critical(
@@ -544,3 +592,67 @@ class DiscoveryDialog(QDialog):
                 "Indexing Error",
                 f"Error indexing files:\n{str(e)}"
             )
+
+    def _refresh_indexed_folders(self):
+        """Refresh the list of indexed folders."""
+        self.indexed_list.clear()
+
+        folders = get_watched_folders()
+        if folders:
+            self.indexed_group.setVisible(True)
+            for folder in folders:
+                item = QTreeWidgetItem(self.indexed_list)
+                item.setText(0, folder['path'])
+                item.setText(1, str(folder['file_count']))
+                item.setText(2, "Yes" if folder['is_monitored'] else "No")
+                item.setData(0, Qt.ItemDataRole.UserRole, folder['id'])
+        else:
+            self.indexed_group.setVisible(False)
+
+    def _remove_selected_folder(self):
+        """Remove the selected indexed folder."""
+        selected = self.indexed_list.selectedItems()
+        if not selected:
+            QMessageBox.warning(self, "No Selection", "Please select a folder to remove.")
+            return
+
+        item = selected[0]
+        folder_path = item.text(0)
+        folder_id = item.data(0, Qt.ItemDataRole.UserRole)
+
+        result = QMessageBox.question(
+            self,
+            "Confirm Removal",
+            f"Remove folder from index?\n{folder_path}\n\n"
+            f"This will remove all indexed files from this folder.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if result == QMessageBox.StandardButton.Yes:
+            try:
+                remove_watched_folder(folder_id)
+                self._refresh_indexed_folders()
+                QMessageBox.information(self, "Removed", "Folder removed from index.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to remove folder:\n{str(e)}")
+
+    def _reset_scan_ui(self):
+        """Reset the UI to allow scanning another folder."""
+        self.folder_path_edit.setText("(No folder selected)")
+        self.folder_path_edit.setStyleSheet("""
+            QLabel {
+                background: white;
+                color: #657B83;
+                border: 1px solid #D3CBB7;
+                border-radius: 6px;
+                padding: 8px;
+                font-size: 10pt;
+            }
+        """)
+        self.scan_btn.setEnabled(False)
+        self.recursive_checkbox.setChecked(True)
+        self.filetype_group.setVisible(False)
+        self.monitor_group.setVisible(False)
+        self.index_btn.setEnabled(False)
+        self.scan_results = None
+        self.scanned_folder = None
