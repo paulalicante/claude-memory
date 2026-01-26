@@ -368,6 +368,28 @@ def remove_watched_folder(folder_id: int) -> None:
     conn.close()
 
 
+def refresh_folder_index(folder_id: int, progress_callback=None) -> int:
+    """Re-scan and re-index all files in a watched folder."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Get folder path
+    cursor.execute("SELECT path FROM watched_folders WHERE id = ?", (folder_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return 0
+
+    folder_path = Path(row[0])
+    conn.close()
+
+    # Re-scan the directory
+    scan_results = scan_directory(folder_path, progress_callback)
+
+    # Re-index all files (INSERT OR REPLACE will update existing entries)
+    return index_files(folder_id, scan_results['files'], progress_callback)
+
+
 def get_file_type_icon(file_type: str) -> str:
     """Get an emoji icon for a file type."""
     icons = {

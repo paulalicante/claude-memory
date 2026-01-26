@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 
-from .file_indexer import scan_directory, add_watched_folder, index_files, get_file_type_icon, get_watched_folders, remove_watched_folder
+from .file_indexer import scan_directory, add_watched_folder, index_files, get_file_type_icon, get_watched_folders, remove_watched_folder, refresh_folder_index
 
 
 class ScanWorker(QThread):
@@ -70,6 +70,35 @@ class IndexWorker(QThread):
                 self.progress.emit(current, total)
 
             count = index_files(self.folder_id, self.files, progress_callback)
+            self.finished.emit(count)
+        except InterruptedError:
+            pass
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class RefreshWorker(QThread):
+    """Background thread for refreshing folder index."""
+    progress = pyqtSignal(int)  # file_count
+    finished = pyqtSignal(int)  # indexed_count
+    error = pyqtSignal(str)
+
+    def __init__(self, folder_id: int):
+        super().__init__()
+        self.folder_id = folder_id
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    def run(self):
+        try:
+            def progress_callback(count):
+                if self._is_cancelled:
+                    raise InterruptedError("Refresh cancelled")
+                self.progress.emit(count)
+
+            count = refresh_folder_index(self.folder_id, progress_callback)
             self.finished.emit(count)
         except InterruptedError:
             pass
@@ -205,6 +234,21 @@ class DiscoveryDialog(QDialog):
 
         remove_btn_layout = QHBoxLayout()
         remove_btn_layout.addStretch()
+
+        self.refresh_folder_btn = QPushButton("↻ Refresh Selected")
+        self.refresh_folder_btn.setStyleSheet("""
+            QPushButton {
+                background: #859900;
+                padding: 5px 10px;
+                font-size: 9pt;
+            }
+            QPushButton:hover {
+                background: #719E00;
+            }
+        """)
+        self.refresh_folder_btn.clicked.connect(self._refresh_selected_folder)
+        remove_btn_layout.addWidget(self.refresh_folder_btn)
+
         self.remove_folder_btn = QPushButton("Remove Selected")
         self.remove_folder_btn.setStyleSheet("""
             QPushButton {
@@ -695,6 +739,94 @@ class DiscoveryDialog(QDialog):
                 item.setData(0, Qt.ItemDataRole.UserRole, folder['id'])
         else:
             self.indexed_group.setVisible(False)
+
+    def _refresh_selected_folder(self):
+        """Refresh the selected indexed folder."""
+        selected = self.indexed_list.selectedItems()
+        if not selected:
+            QMessageBox.warning(self, "No Selection", "Please select a folder to refresh.")
+            return
+
+        item = selected[0]
+        folder_path = item.text(0)
+        folder_id = item.data(0, Qt.ItemDataRole.UserRole)
+        file_count = int(item.text(1))
+
+        result = QMessageBox.question(
+            self,
+            "Confirm Refresh",
+            f"Re-index all {file_count} files in:\n{folder_path}\n\n"
+            f"This will update content extraction for Word/Excel/PDF files.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if result != QMessageBox.StandardButton.Yes:
+            return
+
+        # Create progress dialog
+        self.progress_dialog = QMessageBox(self)
+        self.progress_dialog.setWindowTitle("Refreshing Index")
+        self.progress_dialog.setText(f"Refreshing index for:\n{folder_path}")
+        self.progress_dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximum(0)  # Indeterminate
+        self.progress_bar.setFormat("Processing files...")
+
+        layout = self.progress_dialog.layout()
+        layout.addWidget(self.progress_bar, layout.rowCount(), 0, 1, layout.columnCount())
+        self.progress_dialog.show()
+
+        # Start refresh in background
+        refresh_worker = RefreshWorker(folder_id)
+        refresh_worker.finished.connect(self._on_refresh_finished)
+        refresh_worker.error.connect(self._on_refresh_error)
+        refresh_worker.start()
+
+        # Store worker to keep it alive
+        self.refresh_worker = refresh_worker
+
+    def _on_refresh_finished(self, count: int):
+        """Handle refresh completion."""
+        # Close progress dialog
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog.deleteLater()
+            self.progress_dialog = None
+
+        if self.progress_bar:
+            self.progress_bar.deleteLater()
+            self.progress_bar = None
+
+        QApplication.processEvents()
+
+        QMessageBox.information(
+            self,
+            "Refresh Complete",
+            f"Successfully refreshed {count} files.\n\nContent extraction has been updated."
+        )
+
+        self._refresh_indexed_folders()
+
+    def _on_refresh_error(self, error: str):
+        """Handle refresh error."""
+        # Close progress dialog
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog.deleteLater()
+            self.progress_dialog = None
+
+        if self.progress_bar:
+            self.progress_bar.deleteLater()
+            self.progress_bar = None
+
+        QApplication.processEvents()
+
+        QMessageBox.critical(
+            self,
+            "Refresh Error",
+            f"Error refreshing index:\n{error}"
+        )
 
     def _remove_selected_folder(self):
         """Remove the selected indexed folder."""
