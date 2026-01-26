@@ -167,7 +167,7 @@ class SearchWindow(QMainWindow):
         self._detail_window = DetailWindow()
 
         # Hover preview
-        self._hover_preview = HoverPreview(self)
+        self._hover_preview = HoverPreview(None)  # No parent - independent window
 
         # Multi-select state
         self._multi_select_mode = False
@@ -570,16 +570,24 @@ class SearchWindow(QMainWindow):
         # Update preview text
         self._hover_preview.setText(preview_text)
 
-        # Position preview near cursor, offset to the right and down
-        cursor_pos = self.mapFromGlobal(self.cursor().pos())
+        # Position preview near cursor using global coordinates
+        from PyQt6.QtGui import QGuiApplication
+        cursor_pos = self.cursor().pos()  # Global position
+        screen = QGuiApplication.screenAt(cursor_pos)
+        if screen:
+            screen_geometry = screen.geometry()
+        else:
+            # Fallback to primary screen
+            screen_geometry = QGuiApplication.primaryScreen().geometry()
+
         preview_x = cursor_pos.x() + 20
         preview_y = cursor_pos.y() + 20
 
-        # Make sure it doesn't go off screen
-        if preview_x + 300 > self.width():
+        # Make sure it doesn't go off screen (using screen boundaries)
+        if preview_x + 300 > screen_geometry.right():
             preview_x = cursor_pos.x() - 320
 
-        if preview_y + 200 > self.height():
+        if preview_y + 200 > screen_geometry.bottom():
             preview_y = cursor_pos.y() - 220
 
         self._hover_preview.move(preview_x, preview_y)
