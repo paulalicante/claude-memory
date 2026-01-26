@@ -404,6 +404,10 @@ class SearchWindow(QMainWindow):
         btn_save_convo.clicked.connect(self._save_conversation)
         layout.addWidget(btn_save_convo)
 
+        btn_tag_faces = QPushButton("👤 Tag Faces")
+        btn_tag_faces.clicked.connect(self._launch_face_tagging)
+        layout.addWidget(btn_tag_faces)
+
         # Multi-select buttons (hidden initially)
         self.btn_delete_multi = QPushButton("🗑 Delete Selected")
         self.btn_delete_multi.clicked.connect(self._delete_multiple)
@@ -757,6 +761,14 @@ class SearchWindow(QMainWindow):
         # Refresh results if files were indexed
         if result:
             self._do_search()
+
+    def _launch_face_tagging(self):
+        """Launch the face tagging dialog"""
+        from .face_tagging_dialog import FaceTaggingDialog
+        dialog = FaceTaggingDialog(self)
+        dialog.exec()
+        # Refresh results after tagging
+        self._do_search()
 
     def _show_file_actions(self, file_entry):
         """Show action buttons for a file result"""
