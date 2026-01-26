@@ -390,6 +390,39 @@ def refresh_folder_index(folder_id: int, progress_callback=None) -> int:
     return index_files(folder_id, scan_results['files'], progress_callback)
 
 
+def auto_refresh_placeholder_files() -> int:
+    """Automatically refresh files that have placeholder content."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Find folders with files that have placeholder content
+    cursor.execute("""
+        SELECT DISTINCT folder_id
+        FROM indexed_files
+        WHERE content_preview LIKE '%coming soon%'
+        OR content_preview LIKE '%full indexing%'
+    """)
+
+    folder_ids = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
+    if not folder_ids:
+        return 0
+
+    print(f"Auto-refreshing {len(folder_ids)} folders with placeholder content...")
+    total_refreshed = 0
+    for folder_id in folder_ids:
+        try:
+            count = refresh_folder_index(folder_id)
+            total_refreshed += count
+        except Exception as e:
+            print(f"Error auto-refreshing folder {folder_id}: {e}")
+            continue
+
+    print(f"Auto-refresh complete: {total_refreshed} files updated")
+    return total_refreshed
+
+
 def get_file_type_icon(file_type: str) -> str:
     """Get an emoji icon for a file type."""
     icons = {

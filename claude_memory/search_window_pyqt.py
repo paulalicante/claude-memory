@@ -217,6 +217,19 @@ class SearchWindow(QMainWindow):
         statusbar = self.statusBar()
         statusbar.showMessage("Ready")
 
+        # Auto-refresh placeholder files on startup (run after UI is shown)
+        QTimer.singleShot(500, self._auto_refresh_placeholders)
+
+    def _auto_refresh_placeholders(self):
+        """Auto-refresh any files with placeholder content."""
+        from .file_indexer import auto_refresh_placeholder_files
+        try:
+            count = auto_refresh_placeholder_files()
+            if count > 0:
+                self.statusBar().showMessage(f"Auto-refreshed {count} files", 3000)
+        except Exception as e:
+            print(f"Error during auto-refresh: {e}")
+
     def _create_ui(self, parent_layout):
         """Create main UI"""
         ui_widget = QWidget()
