@@ -455,6 +455,47 @@ def get_statistics() -> dict:
     }
 
 
+def unified_search(
+    query: str = "",
+    category: Optional[str] = None,
+    days: Optional[int] = None,
+    limit: int = 100,
+) -> list[dict]:
+    """
+    Unified search across both memory entries and indexed files.
+    Returns list of result dicts with 'result_type' field ('memory' or 'file').
+    """
+    results = []
+
+    # Search memory entries
+    memory_results = search_entries(query, category, days, limit)
+    for entry in memory_results:
+        entry['result_type'] = 'memory'
+        results.append(entry)
+
+    # Search indexed files (if query is provided)
+    if query.strip():
+        from .file_indexer import search_indexed_files
+        file_results = search_indexed_files(query)
+        for file_entry in file_results:
+            file_entry['result_type'] = 'file'
+            # Add fields to match memory entry structure
+            file_entry['title'] = file_entry['file_name']
+            file_entry['content'] = file_entry.get('content_preview', '')
+            file_entry['category'] = 'File'
+            file_entry['tags'] = file_entry['file_type']
+            file_entry['date'] = file_entry.get('modified_date', '')[:10] if file_entry.get('modified_date') else ''
+            results.append(file_entry)
+
+    # Sort by relevance (memories first, then files by modified date)
+    results.sort(key=lambda x: (
+        0 if x['result_type'] == 'memory' else 1,
+        x.get('timestamp', x.get('modified_date', ''))
+    ), reverse=True)
+
+    return results[:limit]
+
+
 def delete_entry(entry_id: int) -> bool:
     """Delete an entry by ID. Returns True if deleted."""
     conn = get_connection()

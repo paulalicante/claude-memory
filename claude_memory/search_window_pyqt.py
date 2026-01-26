@@ -15,7 +15,7 @@ import html
 import re
 
 from . import constants
-from .database import search_entries, get_categories, get_entry_by_id, get_recent_entries, delete_entry, add_entry
+from .database import search_entries, get_categories, get_entry_by_id, get_recent_entries, delete_entry, add_entry, unified_search
 from .detail_window_pyqt import DetailWindow
 from .quick_add_dialog import QuickAddDialog
 from .pdf_import_dialog import PDFImportDialog
@@ -383,6 +383,10 @@ class SearchWindow(QMainWindow):
         btn_pdf.clicked.connect(self._import_pdf)
         layout.addWidget(btn_pdf)
 
+        btn_files = QPushButton("📁 File Discovery")
+        btn_files.clicked.connect(self._launch_file_discovery)
+        layout.addWidget(btn_files)
+
         # Multi-select buttons (hidden initially)
         self.btn_delete_multi = QPushButton("🗑 Delete Selected")
         self.btn_delete_multi.clicked.connect(self._delete_multiple)
@@ -509,13 +513,20 @@ class SearchWindow(QMainWindow):
             category = None
 
         if query:
-            self._results = search_entries(query, category=category)
+            # Use unified search to include both memories and files
+            self._results = unified_search(query, category=category)
         else:
             # No query - show recent entries, optionally filtered by category
             if category:
                 self._results = search_entries("", category=category)
+                # Add result_type to recent entries
+                for entry in self._results:
+                    entry['result_type'] = 'memory'
             else:
                 self._results = get_recent_entries(limit=50)
+                # Add result_type to recent entries
+                for entry in self._results:
+                    entry['result_type'] = 'memory'
 
         self._populate_results()
 
@@ -524,16 +535,25 @@ class SearchWindow(QMainWindow):
         self.results_list.clear()
 
         for entry in self._results:
+            result_type = entry.get('result_type', 'memory')
             title = entry.get('title', 'Untitled')
             category = entry.get('category', 'Uncategorized')
-            date = entry.get('created_at', '')
+            date = entry.get('created_at', entry.get('date', ''))
 
-            item = QListWidgetItem(f"{title} • {category} • {date}")
+            # Different icon based on result type
+            icon = "📝" if result_type == "memory" else "📄"
+            item = QListWidgetItem(f"{icon} {title} • {category} • {date}")
             item.setFont(QFont("Segoe UI", 10))
             item.setData(Qt.ItemDataRole.UserRole, entry)
             self.results_list.addItem(item)
 
-        self.stats_label.setText(f"{len(self._results)} entries")
+        # Count memories and files separately
+        memory_count = sum(1 for e in self._results if e.get('result_type') == 'memory')
+        file_count = len(self._results) - memory_count
+        if file_count > 0:
+            self.stats_label.setText(f"{memory_count} memories, {file_count} files")
+        else:
+            self.stats_label.setText(f"{len(self._results)} entries")
 
     def _on_item_click(self, item):
         """Open detail window on single click (toggle if same entry clicked again)"""
@@ -542,20 +562,27 @@ class SearchWindow(QMainWindow):
 
         entry = item.data(Qt.ItemDataRole.UserRole)
         if entry:
-            entry_id = entry.get('id')
-            self._selected_entry = entry
+            result_type = entry.get('result_type', 'memory')
 
-            # Toggle: if clicking the same entry that's already displayed, close the window
-            if self._displayed_entry_id == entry_id and self._detail_window.isVisible():
-                self._detail_window.hide()
-                self._displayed_entry_id = None
+            # Handle file results differently
+            if result_type == 'file':
+                self._show_file_actions(entry)
             else:
-                # Show the detail window positioned next to this window
-                self._detail_window.show_entry(entry,
-                                               on_delete_callback=self._on_entry_deleted,
-                                               on_close_callback=self._on_detail_closed,
-                                               parent_window=self)
-                self._displayed_entry_id = entry_id
+                # Memory entry - show in detail window
+                entry_id = entry.get('id')
+                self._selected_entry = entry
+
+                # Toggle: if clicking the same entry that's already displayed, close the window
+                if self._displayed_entry_id == entry_id and self._detail_window.isVisible():
+                    self._detail_window.hide()
+                    self._displayed_entry_id = None
+                else:
+                    # Show the detail window positioned next to this window
+                    self._detail_window.show_entry(entry,
+                                                   on_delete_callback=self._on_entry_deleted,
+                                                   on_close_callback=self._on_detail_closed,
+                                                   parent_window=self)
+                    self._displayed_entry_id = entry_id
 
         # Clear selection so item returns to normal appearance
         self.results_list.clearSelection()
@@ -704,6 +731,70 @@ class SearchWindow(QMainWindow):
     def _import_pdf(self):
         """Import PDF"""
         PDFImportDialog(self, on_save_callback=self._do_search)
+
+    def _launch_file_discovery(self):
+        """Launch the file discovery dialog"""
+        from .discovery_dialog import DiscoveryDialog
+        dialog = DiscoveryDialog(self)
+        result = dialog.exec()
+        # Refresh results if files were indexed
+        if result:
+            self._do_search()
+
+    def _show_file_actions(self, file_entry):
+        """Show action buttons for a file result"""
+        file_path = file_entry.get('file_path', '')
+        file_name = file_entry.get('file_name', 'Unknown')
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("File Actions")
+        msg.setText(f"📄 {file_name}")
+        msg.setInformativeText(f"Path: {file_path}\n\nWhat would you like to do?")
+
+        open_btn = msg.addButton("Open File", QMessageBox.ButtonRole.ActionRole)
+        import_btn = msg.addButton("Import to Memory", QMessageBox.ButtonRole.ActionRole)
+        msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+
+        msg.exec()
+
+        if msg.clickedButton() == open_btn:
+            self._open_file(file_path)
+        elif msg.clickedButton() == import_btn:
+            self._import_file_to_memory(file_entry)
+
+    def _open_file(self, file_path):
+        """Open file in default application"""
+        import os
+        import subprocess
+        import platform
+
+        try:
+            if platform.system() == 'Windows':
+                os.startfile(file_path)
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.run(['open', file_path])
+            else:  # Linux
+                subprocess.run(['xdg-open', file_path])
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to open file:\n{str(e)}")
+
+    def _import_file_to_memory(self, file_entry):
+        """Import a file as a memory entry"""
+        file_path = file_entry.get('file_path', '')
+        file_name = file_entry.get('file_name', 'Unknown')
+        content_preview = file_entry.get('content_preview', '')
+        file_type = file_entry.get('file_type', '')
+
+        # Create memory entry with file info
+        title = f"[File] {file_name}"
+        content = f"File: {file_path}\n\nContent Preview:\n{content_preview}"
+
+        try:
+            add_entry(title=title, content=content, category="File", tags=file_type)
+            QMessageBox.information(self, "Success", f"File imported to memory:\n{file_name}")
+            self._do_search()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to import file:\n{str(e)}")
 
     def _toggle_multi_select(self):
         """Toggle between single and multi-select mode"""
