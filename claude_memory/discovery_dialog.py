@@ -47,6 +47,36 @@ class ScanWorker(QThread):
             self.error.emit(str(e))
 
 
+class IndexWorker(QThread):
+    """Background thread for indexing files."""
+    progress = pyqtSignal(int, int)  # (current, total)
+    finished = pyqtSignal(int)  # indexed_count
+    error = pyqtSignal(str)
+
+    def __init__(self, folder_id: int, files: List[Dict]):
+        super().__init__()
+        self.folder_id = folder_id
+        self.files = files
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    def run(self):
+        try:
+            def progress_callback(current, total):
+                if self._is_cancelled:
+                    raise InterruptedError("Indexing cancelled")
+                self.progress.emit(current, total)
+
+            count = index_files(self.folder_id, self.files, progress_callback)
+            self.finished.emit(count)
+        except InterruptedError:
+            pass
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class DiscoveryDialog(QDialog):
     """Dialog for discovering and selecting folders to index."""
 
@@ -55,7 +85,9 @@ class DiscoveryDialog(QDialog):
         self.scan_results = None  # Current scan results
         self.scanned_folder = None
         self.scan_worker = None
+        self.index_worker = None
         self.file_type_checkboxes = {}  # {file_type: checkbox}
+        self.progress_dialog = None
         self._init_ui()
 
     def _init_ui(self):
@@ -542,57 +574,89 @@ class DiscoveryDialog(QDialog):
         if result != QMessageBox.StandardButton.Yes:
             return
 
-        # Index files
+        # Add to watched folders (quick operation, stays on main thread)
         try:
-            # Add to watched folders
             folder_id = add_watched_folder(
                 self.scanned_folder,
                 self.monitor_checkbox.isChecked()
             )
-
-            # Index files with progress
-            progress = QProgressBar(self)
-            progress.setMaximum(len(filtered_files))
-            progress.setFormat("Indexing: %v / %m files")
-
-            # Simple modal progress dialog
-            progress_dialog = QMessageBox(self)
-            progress_dialog.setWindowTitle("Indexing...")
-            progress_dialog.setText("Indexing files, please wait...")
-            progress_dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
-            layout = progress_dialog.layout()
-            layout.addWidget(progress, layout.rowCount(), 0, 1, layout.columnCount())
-            progress_dialog.show()
-            QApplication.processEvents()
-
-            def update_progress(current, total):
-                progress.setValue(current)
-                QApplication.processEvents()
-
-            count = index_files(folder_id, filtered_files, update_progress)
-
-            progress_dialog.close()
-
-            # Show success message
-            QMessageBox.information(
-                self,
-                "Indexing Complete",
-                f"Successfully indexed {count} files from:\n{self.scanned_folder}\n\n"
-                f"You can add more folders or click Done to finish."
-            )
-
-            # Refresh the indexed folders list
-            self._refresh_indexed_folders()
-
-            # Reset UI for next folder
-            self._reset_scan_ui()
-
         except Exception as e:
             QMessageBox.critical(
                 self,
-                "Indexing Error",
-                f"Error indexing files:\n{str(e)}"
+                "Error",
+                f"Failed to add folder to database:\n{str(e)}"
             )
+            return
+
+        # Disable buttons during indexing
+        self.index_btn.setEnabled(False)
+        self.scan_btn.setEnabled(False)
+        self.browse_btn.setEnabled(False)
+
+        # Create progress dialog
+        self.progress_dialog = QMessageBox(self)
+        self.progress_dialog.setWindowTitle("Indexing Files")
+        self.progress_dialog.setText(f"Indexing {len(filtered_files)} files...")
+        self.progress_dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
+
+        progress_bar = QProgressBar()
+        progress_bar.setMaximum(len(filtered_files))
+        progress_bar.setFormat("Indexing: %v / %m files")
+
+        layout = self.progress_dialog.layout()
+        layout.addWidget(progress_bar, layout.rowCount(), 0, 1, layout.columnCount())
+        self.progress_dialog.show()
+
+        # Start indexing in background
+        self.index_worker = IndexWorker(folder_id, filtered_files)
+        self.index_worker.progress.connect(lambda curr, total: progress_bar.setValue(curr))
+        self.index_worker.finished.connect(self._on_index_finished)
+        self.index_worker.error.connect(self._on_index_error)
+        self.index_worker.start()
+
+    def _on_index_finished(self, count: int):
+        """Handle indexing completion."""
+        # Close progress dialog
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+
+        # Re-enable buttons
+        self.scan_btn.setEnabled(True)
+        self.browse_btn.setEnabled(True)
+
+        # Show success message
+        QMessageBox.information(
+            self,
+            "Indexing Complete",
+            f"Successfully indexed {count} files from:\n{self.scanned_folder}\n\n"
+            f"You can add more folders or click Done to finish."
+        )
+
+        # Refresh the indexed folders list
+        self._refresh_indexed_folders()
+
+        # Reset UI for next folder
+        self._reset_scan_ui()
+
+    def _on_index_error(self, error: str):
+        """Handle indexing error."""
+        # Close progress dialog
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+
+        # Re-enable buttons
+        self.index_btn.setEnabled(True)
+        self.scan_btn.setEnabled(True)
+        self.browse_btn.setEnabled(True)
+
+        # Show error message
+        QMessageBox.critical(
+            self,
+            "Indexing Error",
+            f"Error indexing files:\n{error}"
+        )
 
     def _refresh_indexed_folders(self):
         """Refresh the list of indexed folders."""
