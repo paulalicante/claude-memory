@@ -554,6 +554,9 @@ class SearchWindow(QMainWindow):
                                                parent_window=self)
                 self._displayed_entry_id = entry_id
 
+        # Clear selection so item returns to normal appearance
+        self.results_list.clearSelection()
+
     def _on_entry_deleted(self, entry):
         """Callback when an entry is deleted from detail window"""
         # Clear the displayed entry tracking
