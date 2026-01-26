@@ -106,6 +106,62 @@ class RefreshWorker(QThread):
             self.error.emit(str(e))
 
 
+class ImageIndexWorker(QThread):
+    """Background thread for indexing images (face + CLIP)."""
+    progress = pyqtSignal(str)  # status_message
+    finished = pyqtSignal(dict)  # stats: {'faces': int, 'images': int, 'errors': int}
+    error = pyqtSignal(str)
+
+    def __init__(self, image_files: List[str]):
+        super().__init__()
+        self.image_files = image_files
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    def run(self):
+        try:
+            from .face_indexer import FaceIndexer
+            from .clip_indexer import CLIPIndexer
+
+            stats = {'faces': 0, 'images': 0, 'errors': 0}
+
+            # Initialize indexers
+            self.progress.emit("Initializing face recognition...")
+            face_indexer = FaceIndexer()
+
+            self.progress.emit("Loading CLIP model...")
+            clip_indexer = CLIPIndexer()
+
+            # Index each image
+            for i, image_path in enumerate(self.image_files):
+                if self._is_cancelled:
+                    raise InterruptedError("Image indexing cancelled")
+
+                try:
+                    # Face indexing
+                    self.progress.emit(f"[{i+1}/{len(self.image_files)}] Detecting faces in {Path(image_path).name}...")
+                    face_count = face_indexer.index_image(image_path)
+                    stats['faces'] += face_count
+
+                    # CLIP indexing
+                    self.progress.emit(f"[{i+1}/{len(self.image_files)}] Indexing scene for {Path(image_path).name}...")
+                    clip_indexer.index_image(image_path)
+                    stats['images'] += 1
+
+                except Exception as e:
+                    stats['errors'] += 1
+                    self.progress.emit(f"Error: {Path(image_path).name}: {str(e)[:50]}")
+
+            self.finished.emit(stats)
+
+        except InterruptedError:
+            pass
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class DiscoveryDialog(QDialog):
     """Dialog for discovering and selecting folders to index."""
 
@@ -115,9 +171,11 @@ class DiscoveryDialog(QDialog):
         self.scanned_folder = None
         self.scan_worker = None
         self.index_worker = None
+        self.image_index_worker = None
         self.file_type_checkboxes = {}  # {file_type: checkbox}
         self.progress_dialog = None
         self.progress_bar = None
+        self.current_folder_id = None  # Store folder_id for image indexing
         self._init_ui()
 
     def _init_ui(self):
@@ -404,6 +462,18 @@ class DiscoveryDialog(QDialog):
         monitor_note.setStyleSheet("color: #CB4B16; font-size: 9pt; font-style: italic; font-weight: normal;")
         monitor_layout.addWidget(monitor_note)
 
+        # Image indexing option
+        self.index_images_checkbox = QCheckBox("🔍 Index images for face & scene search (experimental)")
+        self.index_images_checkbox.setStyleSheet("font-weight: normal; margin-top: 10px;")
+        monitor_layout.addWidget(self.index_images_checkbox)
+
+        image_note = QLabel(
+            "Uses face recognition + CLIP to enable searches like \"Michelle on the beach\". Requires additional libraries."
+        )
+        image_note.setWordWrap(True)
+        image_note.setStyleSheet("color: #268BD2; font-size: 9pt; font-style: italic; font-weight: normal;")
+        monitor_layout.addWidget(image_note)
+
         main_layout.addWidget(self.monitor_group)
 
         # Spacer
@@ -624,6 +694,7 @@ class DiscoveryDialog(QDialog):
                 self.scanned_folder,
                 self.monitor_checkbox.isChecked()
             )
+            self.current_folder_id = folder_id  # Store for image indexing
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -679,6 +750,20 @@ class DiscoveryDialog(QDialog):
         # Process events to ensure dialog is fully closed
         QApplication.processEvents()
 
+        # Check if image indexing is enabled
+        if self.index_images_checkbox.isChecked() and self.scan_results:
+            # Find image files
+            image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.gif'}
+            image_files = [
+                f['path'] for f in self.scan_results['files']
+                if Path(f['path']).suffix.lower() in image_extensions
+            ]
+
+            if image_files:
+                # Start image indexing
+                self._start_image_indexing(image_files)
+                return  # Don't show completion message yet
+
         # Re-enable buttons
         self.scan_btn.setEnabled(True)
         self.browse_btn.setEnabled(True)
@@ -722,6 +807,112 @@ class DiscoveryDialog(QDialog):
             self,
             "Indexing Error",
             f"Error indexing files:\n{error}"
+        )
+
+    def _start_image_indexing(self, image_files: List[str]):
+        """Start image indexing (face + CLIP) in background."""
+        # Create progress dialog
+        self.progress_dialog = QMessageBox(self)
+        self.progress_dialog.setWindowTitle("Indexing Images")
+        self.progress_dialog.setText(f"Indexing {len(image_files)} images for face & scene search...")
+        self.progress_dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
+
+        # Add text area for progress messages
+        self.progress_text = QLabel("Initializing...")
+        self.progress_text.setWordWrap(True)
+        self.progress_text.setStyleSheet("font-family: monospace; font-size: 9pt;")
+
+        layout = self.progress_dialog.layout()
+        layout.addWidget(self.progress_text, layout.rowCount(), 0, 1, layout.columnCount())
+        self.progress_dialog.show()
+
+        # Start image indexing in background
+        self.image_index_worker = ImageIndexWorker(image_files)
+        self.image_index_worker.progress.connect(self._on_image_index_progress)
+        self.image_index_worker.finished.connect(self._on_image_index_finished)
+        self.image_index_worker.error.connect(self._on_image_index_error)
+        self.image_index_worker.start()
+
+    def _on_image_index_progress(self, message: str):
+        """Update progress during image indexing."""
+        if self.progress_text:
+            self.progress_text.setText(message)
+            QApplication.processEvents()
+
+    def _on_image_index_finished(self, stats: dict):
+        """Handle image indexing completion."""
+        # Close progress dialog
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog.deleteLater()
+            self.progress_dialog = None
+
+        if hasattr(self, 'progress_text'):
+            self.progress_text = None
+
+        # Process events to ensure dialog is closed
+        QApplication.processEvents()
+
+        # Re-enable buttons
+        self.scan_btn.setEnabled(True)
+        self.browse_btn.setEnabled(True)
+
+        # Show completion message
+        message = (
+            f"Image indexing complete!\n\n"
+            f"📸 Images indexed: {stats['images']}\n"
+            f"👤 Faces detected: {stats['faces']}\n"
+        )
+
+        if stats['errors'] > 0:
+            message += f"⚠️ Errors: {stats['errors']}\n"
+
+        message += (
+            f"\n✅ Files indexed from:\n{self.scanned_folder}\n\n"
+            f"You can now:\n"
+            f"• Tag detected faces with names\n"
+            f"• Search for images by person or scene\n"
+            f"• Add more folders or click Done"
+        )
+
+        QMessageBox.information(
+            self,
+            "Image Indexing Complete",
+            message
+        )
+
+        # Refresh the indexed folders list
+        self._refresh_indexed_folders()
+
+        # Reset UI for next folder
+        self._reset_scan_ui()
+
+    def _on_image_index_error(self, error: str):
+        """Handle image indexing error."""
+        # Close progress dialog
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog.deleteLater()
+            self.progress_dialog = None
+
+        if hasattr(self, 'progress_text'):
+            self.progress_text = None
+
+        # Process events
+        QApplication.processEvents()
+
+        # Re-enable buttons
+        self.scan_btn.setEnabled(True)
+        self.browse_btn.setEnabled(True)
+
+        # Show error message
+        QMessageBox.critical(
+            self,
+            "Image Indexing Error",
+            f"Error indexing images:\n{error}\n\n"
+            f"Make sure you have installed the required libraries:\n"
+            f"pip install face_recognition torch torchvision\n"
+            f"pip install git+https://github.com/openai/CLIP.git"
         )
 
     def _refresh_indexed_folders(self):
