@@ -41,3 +41,9 @@ PyQt6-WebEngine>=6.6.0     # HTML rendering for PyQt6 (email viewer)
 python-docx>=0.8.11        # Read Word documents (.docx)
 openpyxl>=3.1.0            # Read Excel files (.xlsx)
 watchdog>=3.0.0            # File system monitoring for watched folders
+
+# Image search (face recognition + CLIP semantic search)
+face_recognition>=1.3.0    # Face detection and encoding (requires dlib, may need cmake)
+torch>=2.0.0               # PyTorch for CLIP
+torchvision>=0.15.0        # Vision utilities for CLIP
+git+https://github.com/openai/CLIP.git  # OpenAI CLIP model for semantic image search

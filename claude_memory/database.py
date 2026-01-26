@@ -227,6 +227,45 @@ def init_database() -> None:
             END
         """)
 
+    # Persons table - known faces (tagged)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS persons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            reference_embedding BLOB,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Face embeddings table - detected faces in images
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS face_embeddings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            image_path TEXT NOT NULL,
+            embedding BLOB NOT NULL,
+            person_id INTEGER,
+            bbox_left INTEGER,
+            bbox_top INTEGER,
+            bbox_right INTEGER,
+            bbox_bottom INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (person_id) REFERENCES persons(id)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_face_person ON face_embeddings(person_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_face_path ON face_embeddings(image_path)")
+
+    # CLIP embeddings table - scene/semantic embeddings for images
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS clip_embeddings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            image_path TEXT NOT NULL UNIQUE,
+            embedding BLOB NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_clip_path ON clip_embeddings(image_path)")
+
     conn.commit()
     conn.close()
 
