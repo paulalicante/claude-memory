@@ -534,6 +534,9 @@ class SearchWindow(QMainWindow):
 
     def _on_item_click(self, item):
         """Open detail window on single click (toggle if same entry clicked again)"""
+        # Hide hover preview when clicking
+        self._hover_preview.hide()
+
         entry = item.data(Qt.ItemDataRole.UserRole)
         if entry:
             entry_id = entry.get('id')
