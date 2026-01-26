@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Blue Glossy Button - Electron</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #F0F0F0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-bottom: 40px;
+        }
+
+        /* GLOSSY 3D BUTTON */
+        .btn-glossy {
+            padding: 20px 60px;
+            font-size: 18px;
+            font-weight: 600;
+            border: 3px solid rgba(255,255,255,0.5);
+            border-radius: 50px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            background: linear-gradient(to bottom, #60A5FA, #1E3A8A);
+            min-width: 280px;
+        }
+
+        /* Glossy highlight on top */
+        .btn-glossy::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50%;
+            background: linear-gradient(to bottom,
+                rgba(255,255,255,0.5),
+                rgba(255,255,255,0.1),
+                transparent);
+            border-radius: 50px 50px 0 0;
+            pointer-events: none;
+        }
+
+        .btn-glossy:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 14px 35px rgba(0,0,0,0.4);
+        }
+
+        .btn-glossy:active {
+            transform: translateY(2px);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+        }
+
+        .info {
+            font-size: 12px;
+            color: #95a5a6;
+            margin-top: 40px;
+            text-align: center;
+        }
+
+        .click-status {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #34495e;
+            min-height: 20px;
+        }
+
+        /* Alternative deeper blue variant */
+        .btn-glossy-deep {
+            background: linear-gradient(to bottom, #3B82F6, #1E3A8A);
+        }
+
+        /* Even deeper variant */
+        .btn-glossy-navy {
+            background: linear-gradient(to bottom, #1E40AF, #0C1E5A);
+        }
+
+        .button-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .label {
+            font-size: 11px;
+            color: #7f8c8d;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="title">Deep Blue Glossy Buttons - Electron</div>
+    <div class="subtitle">Hover and click to test interactivity</div>
+
+    <div class="button-grid">
+        <div>
+            <div class="label">Light to Deep Blue (Recommended)</div>
+            <button class="btn-glossy" onclick="handleClick('Light Blue')">Click Me!</button>
+        </div>
+
+        <div>
+            <div class="label">Medium to Deep Blue</div>
+            <button class="btn-glossy btn-glossy-deep" onclick="handleClick('Medium Blue')">Click Me!</button>
+        </div>
+
+        <div>
+            <div class="label">Deep to Navy Blue</div>
+            <button class="btn-glossy btn-glossy-navy" onclick="handleClick('Navy Blue')">Click Me!</button>
+        </div>
+    </div>
+
+    <div class="click-status" id="status"></div>
+
+    <div class="info">
+        This is how glossy buttons render in Electron (Chromium)<br>
+        Perfect CSS rendering with gradients, shadows, and highlights
+    </div>
+
+    <script>
+        function handleClick(variant) {
+            const status = document.getElementById('status');
+            status.textContent = `${variant} button clicked!`;
+            status.style.color = '#27ae60';
+
+            setTimeout(() => {
+                status.textContent = '';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

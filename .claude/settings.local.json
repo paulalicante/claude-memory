@@ -14,7 +14,10 @@
       "Bash(TASKKILL //F //PID 50984)",
       "Bash(call restart.bat)",
       "Bash(cmd //c restart.bat)",
-      "Read(//g/My Drive/ClaudeMemory/**)"
+      "Read(//g/My Drive/ClaudeMemory/**)",
+      "Bash(node --version:*)",
+      "Bash(npm install:*)",
+      "Bash(npx electron .)"
     ]
   }
 }

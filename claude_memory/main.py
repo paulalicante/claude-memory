@@ -12,7 +12,8 @@ import socket
 
 import keyboard
 import pyperclip
-from tkinter import ttk, scrolledtext
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 
 from . import constants
 from .config import Config
@@ -314,8 +315,8 @@ class ClaudeMemoryApp:
         # Start HTTP server for external integrations
         self._setup_http_server()
 
-        # Create hidden root window for tkinter event loop
-        self._root = tk.Tk()
+        # Create hidden root window for tkinter event loop with modern theme
+        self._root = ttk.Window(themename="cosmo")
         self._root.withdraw()  # Hide the root window
 
         # Create chat window first (search window needs reference to it)

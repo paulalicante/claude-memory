@@ -1,0 +1,6 @@
+@echo off
+echo Installing Electron if needed...
+call npm install
+echo.
+echo Starting glossy button demo...
+call npm start

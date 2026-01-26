@@ -36,3 +36,8 @@ tkinterweb>=4.0.0          # HTML/CSS rendering widget for tkinter
 ttkbootstrap>=1.20.0       # Bootstrap-inspired modern themes for tkinter
 PyQt6>=6.6.0               # Modern Qt6 framework for PyQt6 version
 PyQt6-WebEngine>=6.6.0     # HTML rendering for PyQt6 (email viewer)
+
+# File indexing and document parsing
+python-docx>=0.8.11        # Read Word documents (.docx)
+openpyxl>=3.1.0            # Read Excel files (.xlsx)
+watchdog>=3.0.0            # File system monitoring for watched folders

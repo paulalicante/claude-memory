@@ -1,11 +1,13 @@
 """
 Search window UI for Claude Memory app.
-Built with tkinter for lightweight, no-dependency UI.
+Built with tkinter and ttkbootstrap for modern UI.
 """
 
 import tkinter as tk
-from tkinter import ttk, scrolledtext, filedialog
+from tkinter import scrolledtext, filedialog, messagebox
 from typing import Optional, List
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 
 from . import constants
 from .database import search_entries, get_categories, get_entry_by_id, get_recent_entries, delete_entry, add_entry
@@ -38,8 +40,6 @@ class SearchWindow:
         self._category_var: Optional[tk.StringVar] = None
         self._date_var: Optional[tk.StringVar] = None
         self._results_listbox: Optional[tk.Listbox] = None
-        self._detail_text: Optional[scrolledtext.ScrolledText] = None
-        self._meta_label: Optional[tk.Label] = None
 
         # Auto-refresh state
         self._auto_refresh_job = None
@@ -54,46 +54,173 @@ class SearchWindow:
         self._checkbox_frame: Optional[tk.Frame] = None
         self._checkbox_canvas: Optional[tk.Canvas] = None
 
-        # PDF viewer state
-        self._pdf_canvas: Optional[tk.Canvas] = None
-        self._pdf_images: List = []  # Store PhotoImage references to prevent garbage collection
-        self._pdf_frame: Optional[tk.Frame] = None
-
-        # HTML viewer state
-        self._html_frame: Optional[tk.Frame] = None
-        self._html_text: Optional[tk.Text] = None
-        self._html_images: List = []  # Store PhotoImage references to prevent garbage collection
+        # Detail window (separate window for viewing entries)
+        from .detail_window import DetailWindow
+        self._detail_window = DetailWindow()
 
     def _create_window(self) -> None:
-        """Create the search window."""
-        self._root = tk.Toplevel()
-        self._root.title(f"{constants.APP_NAME} - Search")
-        self._root.geometry(
-            f"{constants.SEARCH_WINDOW_WIDTH}x{constants.SEARCH_WINDOW_HEIGHT}"
-        )
+        """Create the search window with sidebar layout."""
+        self._root = tk.Toplevel()  # Child window inherits theme from root
+        self._root.title(f"{constants.APP_NAME}")
+        self._root.geometry("900x700")
 
         # Handle window close - hide instead of destroy
         self._root.protocol("WM_DELETE_WINDOW", self.hide)
 
-        # Configure grid weights for resizing
-        self._root.columnconfigure(0, weight=1)
-        self._root.rowconfigure(2, weight=1)
+        # Configure grid weights for resizing - sidebar + list
+        self._root.columnconfigure(0, weight=0)  # Sidebar (fixed width)
+        self._root.columnconfigure(1, weight=1)  # List (expandable)
+        self._root.rowconfigure(0, weight=1)
 
-        self._create_search_bar()
-        self._create_filters()
+        self._create_sidebar()
         self._create_results_area()
 
-        # Bind Enter key to search
+        # Bind keyboard shortcuts
         self._root.bind("<Return>", lambda e: self._do_search())
-
-        # Bind F5 to refresh
         self._root.bind("<F5>", lambda e: self._refresh())
-
-        # Bind Escape to hide
         self._root.bind("<Escape>", lambda e: self.hide())
-
-        # Bind Ctrl+V to quick add (when not in a text widget)
         self._root.bind("<Control-v>", self._on_ctrl_v)
+
+    def _create_sidebar(self) -> None:
+        """Create the left sidebar with all controls."""
+        sidebar = ttk.Frame(self._root, padding="10", relief=tk.RAISED, borderwidth=1)
+        sidebar.grid(row=0, column=0, sticky="ns")
+
+        row = 0
+
+        # App title
+        title_label = ttk.Label(sidebar, text="Claude Memory", font=("Segoe UI", 14, "bold"))
+        title_label.grid(row=row, column=0, pady=(0, 15), sticky="w")
+        row += 1
+
+        # Search section
+        ttk.Label(sidebar, text="Search:", font=("Segoe UI", 10, "bold")).grid(row=row, column=0, sticky="w", pady=(5, 5))
+        row += 1
+
+        self._search_var = tk.StringVar()
+        search_entry = ttk.Entry(sidebar, textvariable=self._search_var, font=("Segoe UI", 10), width=25)
+        search_entry.grid(row=row, column=0, sticky="ew", pady=(0, 5))
+        search_entry.focus()
+        row += 1
+
+        search_btn = ttk.Button(sidebar, text="Search", command=self._do_search, width=23, bootstyle="primary")
+        search_btn.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+        row += 1
+
+        # Filters section
+        ttk.Separator(sidebar, orient=tk.HORIZONTAL).grid(row=row, column=0, sticky="ew", pady=5)
+        row += 1
+
+        ttk.Label(sidebar, text="Filters:", font=("Segoe UI", 10, "bold")).grid(row=row, column=0, sticky="w", pady=(5, 5))
+        row += 1
+
+        # Category filter
+        ttk.Label(sidebar, text="Category:", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="w")
+        row += 1
+
+        self._category_var = tk.StringVar(value="All")
+        category_combo = ttk.Combobox(
+            sidebar,
+            textvariable=self._category_var,
+            values=["All"],
+            state="readonly",
+            width=23
+        )
+        category_combo.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+        category_combo.bind("<<ComboboxSelected>>", lambda e: self._do_search())
+        row += 1
+
+        # Date filter
+        ttk.Label(sidebar, text="Date Range:", font=("Segoe UI", 9)).grid(row=row, column=0, sticky="w")
+        row += 1
+
+        self._date_var = tk.StringVar(value="All Time")
+        date_combo = ttk.Combobox(
+            sidebar,
+            textvariable=self._date_var,
+            values=list(constants.DATE_FILTERS.keys()),
+            state="readonly",
+            width=23
+        )
+        date_combo.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+        date_combo.bind("<<ComboboxSelected>>", lambda e: self._do_search())
+        row += 1
+
+        # Actions section
+        ttk.Separator(sidebar, orient=tk.HORIZONTAL).grid(row=row, column=0, sticky="ew", pady=5)
+        row += 1
+
+        ttk.Label(sidebar, text="Actions:", font=("Segoe UI", 10, "bold")).grid(row=row, column=0, sticky="w", pady=(5, 5))
+        row += 1
+
+        # Multi-select checkbox
+        self._multi_select_var = tk.BooleanVar(value=False)
+        multi_check = ttk.Checkbutton(
+            sidebar,
+            text="Multi-Select Mode",
+            variable=self._multi_select_var,
+            command=self._toggle_multi_select
+        )
+        multi_check.grid(row=row, column=0, sticky="w", pady=(0, 5))
+        row += 1
+
+        # Delete Selected button (hidden initially)
+        self._delete_selected_btn = ttk.Button(
+            sidebar, text="Delete Selected", command=self._delete_multiple, width=23, bootstyle="danger"
+        )
+        self._delete_selected_btn.grid(row=row, column=0, sticky="ew", pady=(0, 5))
+        self._delete_selected_btn.grid_remove()  # Hide initially
+        row += 1
+
+        # Remove Duplicates button (hidden initially)
+        self._remove_duplicates_btn = ttk.Button(
+            sidebar, text="Remove Duplicates", command=self._remove_duplicates, width=23, bootstyle="warning"
+        )
+        self._remove_duplicates_btn.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+        self._remove_duplicates_btn.grid_remove()  # Hide initially
+        row += 1
+
+        # Refresh button
+        refresh_btn = ttk.Button(sidebar, text="Refresh", command=self._refresh, width=23, bootstyle="secondary")
+        refresh_btn.grid(row=row, column=0, sticky="ew", pady=(0, 5))
+        row += 1
+
+        # Add Entry button
+        add_btn = ttk.Button(sidebar, text="+ Add Entry", command=self._show_quick_add, width=23, bootstyle="success")
+        add_btn.grid(row=row, column=0, sticky="ew", pady=(0, 5))
+        row += 1
+
+        # Import PDF button
+        if is_pdf_support_available():
+            pdf_btn = ttk.Button(sidebar, text="Import PDF", command=self._import_pdf, width=23, bootstyle="secondary-outline")
+            pdf_btn.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+            row += 1
+
+        # AI section
+        ttk.Separator(sidebar, orient=tk.HORIZONTAL).grid(row=row, column=0, sticky="ew", pady=5)
+        row += 1
+
+        ttk.Label(sidebar, text="AI:", font=("Segoe UI", 10, "bold")).grid(row=row, column=0, sticky="w", pady=(5, 5))
+        row += 1
+
+        self._ai_btn = ttk.Button(sidebar, text="AI Summarize", command=self._do_ai_summarize, width=23, bootstyle="info")
+        self._ai_btn.grid(row=row, column=0, sticky="ew", pady=(0, 5))
+        row += 1
+
+        chat_btn = ttk.Button(sidebar, text="AI Chat", command=self._open_chat, width=23, bootstyle="info-outline")
+        chat_btn.grid(row=row, column=0, sticky="ew", pady=(0, 5))
+        row += 1
+
+        self._chat_these_btn = ttk.Button(sidebar, text="Chat These Results", command=self._chat_about_results, width=23, bootstyle="info-outline")
+        self._chat_these_btn.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+        row += 1
+
+        # Results count at bottom
+        ttk.Separator(sidebar, orient=tk.HORIZONTAL).grid(row=row, column=0, sticky="ew", pady=5)
+        row += 1
+
+        self._count_label = ttk.Label(sidebar, text="", font=("Segoe UI", 9), foreground="gray")
+        self._count_label.grid(row=row, column=0, sticky="w")
 
     def _create_search_bar(self) -> None:
         """Create the search input area."""
@@ -196,21 +323,16 @@ class SearchWindow:
         self._count_label.pack(side=tk.RIGHT)
 
     def _create_results_area(self) -> None:
-        """Create the results list and detail view."""
-        # Main paned window for resizable split
-        paned = ttk.PanedWindow(self._root, orient=tk.HORIZONTAL)
-        paned.grid(row=2, column=0, sticky="nsew", padx=10, pady=(5, 10))
-
-        # Left side: results list
-        left_frame = ttk.Frame(paned)
-        paned.add(left_frame, weight=1)
-
-        left_frame.columnconfigure(0, weight=1)
-        left_frame.rowconfigure(0, weight=1)
+        """Create the results list area."""
+        # Results list frame
+        list_frame = ttk.Frame(self._root, padding="10")
+        list_frame.grid(row=0, column=1, sticky="nsew")
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
 
         # Listbox with scrollbar
         self._results_listbox = tk.Listbox(
-            left_frame,
+            list_frame,
             font=("Segoe UI", 10),
             selectmode=tk.SINGLE,
             activestyle="none",
@@ -218,7 +340,7 @@ class SearchWindow:
         self._results_listbox.grid(row=0, column=0, sticky="nsew")
 
         self._listbox_scrollbar = ttk.Scrollbar(
-            left_frame, orient=tk.VERTICAL, command=self._results_listbox.yview
+            list_frame, orient=tk.VERTICAL, command=self._results_listbox.yview
         )
         self._listbox_scrollbar.grid(row=0, column=1, sticky="ns")
         self._results_listbox.config(yscrollcommand=self._listbox_scrollbar.set)
@@ -227,9 +349,9 @@ class SearchWindow:
         self._results_listbox.bind("<Double-Button-1>", self._on_double_click)
 
         # Checkbox view (shown when multi-select is active)
-        self._checkbox_canvas = tk.Canvas(left_frame, bg="white")
+        self._checkbox_canvas = tk.Canvas(list_frame, bg="white")
         self._checkbox_scrollbar = ttk.Scrollbar(
-            left_frame, orient=tk.VERTICAL, command=self._checkbox_canvas.yview
+            list_frame, orient=tk.VERTICAL, command=self._checkbox_canvas.yview
         )
         self._checkbox_frame = ttk.Frame(self._checkbox_canvas)
         self._checkbox_canvas.configure(yscrollcommand=self._checkbox_scrollbar.set)
@@ -245,118 +367,18 @@ class SearchWindow:
         ))
         self._checkbox_canvas.bind("<Configure>", self._on_checkbox_canvas_resize)
 
-        # Don't grid yet - shown when multi-select is enabled
-
-        # Right side: detail view
-        right_frame = ttk.Frame(paned)
-        paned.add(right_frame, weight=2)
-
-        right_frame.columnconfigure(0, weight=1)
-        right_frame.rowconfigure(1, weight=1)
-
-        # Header row with metadata and delete button
-        header_frame = ttk.Frame(right_frame)
-        header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
-        header_frame.columnconfigure(0, weight=1)
-
-        # Metadata label
-        self._meta_label = ttk.Label(
-            header_frame, text="", font=("Segoe UI", 9), foreground="gray"
-        )
-        self._meta_label.grid(row=0, column=0, sticky="w")
-
-        # Delete button (hidden until entry selected)
-        self._delete_btn = ttk.Button(
-            header_frame, text="Delete", command=self._delete_selected, width=8
-        )
-        self._delete_btn.grid(row=0, column=1, sticky="e", padx=(10, 0))
-        self._delete_btn.grid_remove()  # Hide initially
-
         # Multi-select notice (shown when multi-select is active)
         self._multi_select_notice = tk.Label(
-            right_frame,
-            text="⚠ Multi-select mode is active\nUncheck Multi-select to view entry details",
-            font=("Segoe UI", 11, "bold"),
-            fg="#ff6600",  # Orange color
-            bg="#fff3e0",  # Light orange background
-            pady=20,
+            list_frame,
+            text="⚠ Multi-select mode is active",
+            font=("Segoe UI", 10, "bold"),
+            fg="#ff6600",
+            bg="#fff3e0",
+            pady=15,
             relief=tk.RIDGE,
             borderwidth=2
         )
-        # Don't grid it yet - shown when multi-select is enabled
-
-        # Detail text area (for non-PDF entries)
-        self._detail_text = scrolledtext.ScrolledText(
-            right_frame,
-            font=("Consolas", 10),
-            wrap=tk.WORD,
-            state=tk.DISABLED,
-        )
-        self._detail_text.grid(row=1, column=0, sticky="nsew")
-
-        # PDF viewer frame (hidden by default, shown for PDF entries)
-        self._pdf_frame = ttk.Frame(right_frame)
-        # Don't grid it yet - it will be shown when needed
-
-        # Create canvas with scrollbar for PDF pages
-        self._pdf_canvas = tk.Canvas(self._pdf_frame, bg="gray")
-        pdf_scrollbar = ttk.Scrollbar(self._pdf_frame, orient=tk.VERTICAL, command=self._pdf_canvas.yview)
-        self._pdf_canvas.configure(yscrollcommand=pdf_scrollbar.set)
-
-        self._pdf_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        pdf_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # Inner frame to hold PDF page images
-        self._pdf_inner_frame = ttk.Frame(self._pdf_canvas)
-        self._pdf_canvas_window = self._pdf_canvas.create_window((0, 0), window=self._pdf_inner_frame, anchor="nw")
-
-        # Bind mouse wheel for scrolling
-        def _on_mousewheel(event):
-            self._pdf_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        self._pdf_canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-        # Update scroll region when inner frame changes
-        def _configure_scroll(event):
-            self._pdf_canvas.configure(scrollregion=self._pdf_canvas.bbox("all"))
-
-        self._pdf_inner_frame.bind("<Configure>", _configure_scroll)
-
-        # Resize canvas window when canvas is resized
-        def _configure_canvas(event):
-            self._pdf_canvas.itemconfig(self._pdf_canvas_window, width=event.width)
-
-        self._pdf_canvas.bind("<Configure>", _configure_canvas)
-
-        # HTML viewer frame (hidden by default, shown for HTML email entries)
-        self._html_frame = ttk.Frame(right_frame)
-
-        # Create scrolled text widget for HTML display
-        self._html_text = tk.Text(
-            self._html_frame,
-            wrap=tk.WORD,
-            font=("Segoe UI", 10),
-            padx=10,
-            pady=10,
-            state=tk.DISABLED
-        )
-        html_scrollbar = ttk.Scrollbar(self._html_frame, orient=tk.VERTICAL, command=self._html_text.yview)
-        self._html_text.configure(yscrollcommand=html_scrollbar.set)
-
-        self._html_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        html_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # Configure text tags for HTML formatting
-        self._html_text.tag_configure("h1", font=("Segoe UI", 18, "bold"), spacing3=10)
-        self._html_text.tag_configure("h2", font=("Segoe UI", 16, "bold"), spacing3=8)
-        self._html_text.tag_configure("h3", font=("Segoe UI", 14, "bold"), spacing3=6)
-        self._html_text.tag_configure("bold", font=("Segoe UI", 10, "bold"))
-        self._html_text.tag_configure("italic", font=("Segoe UI", 10, "italic"))
-        self._html_text.tag_configure("underline", underline=True)
-        self._html_text.tag_configure("link", foreground="blue", underline=True)
-        self._html_text.tag_configure("pre", font=("Consolas", 9), background="#f5f5f5")
-        self._html_text.tag_configure("center", justify="center")
-        self._html_text.tag_configure("quote", lmargin1=20, lmargin2=20, foreground="#666")
+        # Don't grid yet - shown when multi-select is enabled
 
     def _refresh_categories(self) -> None:
         """Refresh the category dropdown with current categories."""
@@ -548,333 +570,27 @@ class SearchWindow:
         index = selection[0]
         if index < len(self._results):
             entry = self._results[index]
-            self._show_detail(entry)
+            self._selected_entry = entry
+            # Open detail window
+            self._detail_window.show(entry, on_delete_callback=self._on_entry_deleted_from_detail)
 
     def _on_double_click(self, event) -> None:
         """Handle double-click on results (could copy content, etc.)."""
         # For now, same as single click
         pass
 
-    def _show_detail(self, entry: dict) -> None:
-        """Show entry details in the detail pane."""
-        self._selected_entry = entry
-
-        # Update metadata label
-        meta_parts = [f"ID: {entry['id']}", f"Date: {entry['date']}"]
-        if entry.get("category"):
-            meta_parts.append(f"Category: {entry['category']}")
-        if entry.get("tags"):
-            meta_parts.append(f"Tags: {entry['tags']}")
-        if entry.get("session_id"):
-            meta_parts.append(f"Session: {entry['session_id']}")
-        if entry.get("pdf_path"):
-            page_count = get_pdf_page_count(entry['pdf_path'])
-            meta_parts.append(f"PDF: {page_count} pages")
-        self._meta_label.config(text=" | ".join(meta_parts))
-
-        # Show delete button
-        self._delete_btn.grid()
-
-        # Check if this is a PDF entry
-        if entry.get("pdf_path") and is_pdf_support_available():
-            self._show_pdf_viewer(entry)
-        elif self._has_html_content(entry):
-            self._show_html_viewer(entry)
-        else:
-            self._show_text_detail(entry)
-
-    def _show_text_detail(self, entry: dict) -> None:
-        """Show text content in the detail pane."""
-        # Hide other viewers, show text
-        self._pdf_frame.grid_remove()
-        self._html_frame.grid_remove()
-        self._detail_text.grid(row=1, column=0, sticky="nsew")
-
-        # Update detail text
-        self._detail_text.config(state=tk.NORMAL)
-        self._detail_text.delete("1.0", tk.END)
-        self._detail_text.insert(tk.END, f"{entry['title']}\n")
-        self._detail_text.insert(tk.END, "=" * len(entry["title"]) + "\n\n")
-        self._detail_text.insert(tk.END, entry["content"])
-        self._detail_text.config(state=tk.DISABLED)
-
-    def _show_pdf_viewer(self, entry: dict) -> None:
-        """Show PDF pages in the detail pane."""
-        import os
-
-        pdf_path = entry.get("pdf_path")
-        if not pdf_path or not os.path.exists(pdf_path):
-            # PDF file not found, fall back to text
-            self._show_text_detail(entry)
-            return
-
-        # Hide other viewers, show PDF viewer
-        self._detail_text.grid_remove()
-        self._html_frame.grid_remove()
-        self._pdf_frame.grid(row=1, column=0, sticky="nsew")
-
-        # Clear previous PDF images
-        for widget in self._pdf_inner_frame.winfo_children():
-            widget.destroy()
-        self._pdf_images.clear()
-
-        # Render PDF pages
-        try:
-            images = render_all_pages(pdf_path, zoom=1.2)
-
-            if not images:
-                # No pages rendered, show text instead
-                self._show_text_detail(entry)
-                return
-
-            # Convert PIL images to PhotoImage and display
-            for i, pil_image in enumerate(images):
-                # Convert to PhotoImage
-                photo = ImageTk.PhotoImage(pil_image)
-                self._pdf_images.append(photo)  # Keep reference to prevent garbage collection
-
-                # Create label to display the image
-                page_label = ttk.Label(self._pdf_inner_frame, image=photo)
-                page_label.pack(pady=5)
-
-                # Add page number label
-                page_num_label = ttk.Label(
-                    self._pdf_inner_frame,
-                    text=f"Page {i + 1} of {len(images)}",
-                    font=("Segoe UI", 9),
-                    foreground="gray"
-                )
-                page_num_label.pack(pady=(0, 10))
-
-            # Scroll to top
-            self._pdf_canvas.yview_moveto(0)
-
-        except Exception as e:
-            print(f"Error rendering PDF: {e}")
-            self._show_text_detail(entry)
-
-    def _has_html_content(self, entry: dict) -> bool:
-        """Check if entry has HTML content."""
-        import json
-        try:
-            # Metadata is stored in source_conversation field
-            metadata_str = entry.get("source_conversation", "{}")
-            metadata = json.loads(metadata_str) if isinstance(metadata_str, str) else metadata_str
-            return metadata.get("content_type") == "html" and "html_content" in metadata
-        except:
-            return False
-
-    def _show_html_viewer(self, entry: dict) -> None:
-        """Show HTML email content in the detail pane with formatting."""
-        import json
-        from html.parser import HTMLParser
-        import base64
-        import io
-        from PIL import Image, ImageTk
-        import urllib.request
-        import urllib.error
-
-        try:
-            # Get HTML content from source_conversation field
-            metadata_str = entry.get("source_conversation", "{}")
-            metadata = json.loads(metadata_str) if isinstance(metadata_str, str) else metadata_str
-            html_content = metadata.get("html_content", "")
-
-            if not html_content:
-                # Fall back to text
-                self._show_text_detail(entry)
-                return
-
-            # Hide other viewers, show HTML viewer
-            self._pdf_frame.grid_remove()
-            self._detail_text.grid_remove()
-            self._html_frame.grid(row=1, column=0, sticky="nsew")
-
-            # Clear previous content and images
-            self._html_text.config(state=tk.NORMAL)
-            self._html_text.delete("1.0", tk.END)
-            self._html_images.clear()
-
-            # Add email header
-            self._html_text.insert(tk.END, f"{entry.get('title', 'Email')}\n", "h2")
-            self._html_text.insert(tk.END, f"From: {metadata.get('sender', 'Unknown')}\n")
-            self._html_text.insert(tk.END, f"Subject: {metadata.get('subject', 'No subject')}\n")
-            self._html_text.insert(tk.END, "\n" + "─" * 80 + "\n\n")
-
-            # Parse and render HTML
-            class SimpleHTMLRenderer(HTMLParser):
-                def __init__(self, text_widget, images_list):
-                    super().__init__()
-                    self.text = text_widget
-                    self.images = images_list
-                    self.tag_stack = []
-                    self.skip_content = False
-
-                def handle_starttag(self, tag, attrs):
-                    tag_lower = tag.lower()
-                    if tag_lower in ('style', 'script', 'head', 'meta', 'link'):
-                        self.skip_content = True
-                    elif tag_lower == 'hr':
-                        self.text.insert(tk.END, "\n" + "─" * 60 + "\n")
-                    elif tag_lower == 'br':
-                        self.text.insert(tk.END, "\n")
-                    elif tag_lower == 'p':
-                        self.text.insert(tk.END, "\n\n")
-                    elif tag_lower in ('h1', 'h2', 'h3'):
-                        self.text.insert(tk.END, "\n\n")
-                        self.tag_stack.append(tag_lower)
-                    elif tag_lower in ('b', 'strong'):
-                        self.tag_stack.append('bold')
-                    elif tag_lower in ('i', 'em'):
-                        self.tag_stack.append('italic')
-                    elif tag_lower == 'u':
-                        self.tag_stack.append('underline')
-                    elif tag_lower == 'a':
-                        self.tag_stack.append('link')
-                    elif tag_lower == 'pre':
-                        self.tag_stack.append('pre')
-                        self.text.insert(tk.END, "\n\n")
-                    elif tag_lower == 'blockquote':
-                        self.tag_stack.append('quote')
-                        self.text.insert(tk.END, "\n\n")
-                    elif tag_lower == 'div':
-                        # Add line break for divs
-                        self.text.insert(tk.END, "\n")
-                    elif tag_lower in ('table', 'tbody'):
-                        self.text.insert(tk.END, "\n")
-                    elif tag_lower == 'tr':
-                        self.text.insert(tk.END, "\n")
-                    elif tag_lower == 'td':
-                        self.text.insert(tk.END, "  ")
-                    elif tag_lower in ('ul', 'ol'):
-                        self.text.insert(tk.END, "\n")
-                    elif tag_lower == 'li':
-                        self.text.insert(tk.END, "\n  • ")
-                    elif tag_lower == 'img':
-                        # Add spacing before image
-                        self.text.insert(tk.END, "\n")
-                        # Handle images
-                        self._handle_image(dict(attrs))
-
-                def _handle_image(self, attrs):
-                    """Load and insert image into text widget."""
-                    src = attrs.get('src', '')
-                    if not src:
-                        return
-
-                    try:
-                        pil_image = None
-
-                        # Handle base64 inline images (load immediately - no network)
-                        if src.startswith('data:image'):
-                            # Extract base64 data
-                            if ';base64,' in src:
-                                base64_data = src.split(';base64,')[1]
-                                image_data = base64.b64decode(base64_data)
-                                pil_image = Image.open(io.BytesIO(image_data))
-
-                        # Handle CID references (Gmail inline images)
-                        elif src.startswith('cid:'):
-                            # Can't resolve CID without access to email MIME parts
-                            self.text.insert(tk.END, "[Inline Image]")
-                            return
-
-                        # Handle HTTP/HTTPS URLs
-                        elif src.startswith('http://') or src.startswith('https://'):
-                            try:
-                                with urllib.request.urlopen(src, timeout=5) as response:
-                                    image_data = response.read()
-                                    pil_image = Image.open(io.BytesIO(image_data))
-                            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, Exception):
-                                # Failed to load image, show placeholder
-                                self.text.insert(tk.END, f"[Image failed to load]")
-                                return
-
-                        if pil_image:
-                            # Resize if too large (max width 600px)
-                            max_width = 600
-                            if pil_image.width > max_width:
-                                ratio = max_width / pil_image.width
-                                new_height = int(pil_image.height * ratio)
-                                pil_image = pil_image.resize((max_width, new_height), Image.Resampling.LANCZOS)
-
-                            # Convert to PhotoImage and insert
-                            photo = ImageTk.PhotoImage(pil_image)
-                            self.images.append(photo)  # Keep reference
-                            self.text.image_create(tk.END, image=photo)
-                            self.text.insert(tk.END, "\n")
-
-                    except Exception as e:
-                        # Failed to load/decode image
-                        print(f"Failed to load image: {e}")
-                        self.text.insert(tk.END, "[Image]")
-
-                def handle_endtag(self, tag):
-                    tag_lower = tag.lower()
-                    if tag_lower in ('style', 'script', 'head', 'meta', 'link'):
-                        self.skip_content = False
-                    elif tag_lower in ('p', 'h1', 'h2', 'h3', 'pre', 'blockquote', 'ul', 'ol', 'div', 'table'):
-                        if tag_lower != 'div':  # Don't add extra newlines for divs
-                            self.text.insert(tk.END, "\n")
-                        # Pop from tag stack if present
-                        if self.tag_stack and self.tag_stack[-1] == tag_lower:
-                            self.tag_stack.pop()
-                    elif tag_lower in ('b', 'strong', 'i', 'em', 'u', 'a', 'span'):
-                        # Pop corresponding tag from stack
-                        tag_map = {'b': 'bold', 'strong': 'bold', 'i': 'italic', 'em': 'italic', 'u': 'underline', 'a': 'link'}
-                        expected_tag = tag_map.get(tag_lower, tag_lower)
-                        if self.tag_stack and expected_tag in self.tag_stack:
-                            # Remove the most recent occurrence
-                            for i in range(len(self.tag_stack) - 1, -1, -1):
-                                if self.tag_stack[i] == expected_tag:
-                                    self.tag_stack.pop(i)
-                                    break
-
-                def handle_data(self, data):
-                    if not self.skip_content:
-                        # Clean up excessive whitespace but preserve some spacing
-                        cleaned = ' '.join(data.split())
-                        if cleaned:
-                            # Apply current tags
-                            if self.tag_stack:
-                                self.text.insert(tk.END, cleaned, tuple(self.tag_stack))
-                            else:
-                                self.text.insert(tk.END, cleaned)
-
-            renderer = SimpleHTMLRenderer(self._html_text, self._html_images)
-            renderer.feed(html_content)
-
-            self._html_text.config(state=tk.DISABLED)
-
-        except Exception as e:
-            print(f"Error rendering HTML: {e}")
-            import traceback
-            traceback.print_exc()
-            self._show_text_detail(entry)
+    def _on_entry_deleted_from_detail(self, entry: dict) -> None:
+        """Callback when an entry is deleted from the detail window."""
+        # Delete from database
+        if delete_entry(entry["id"]):
+            # Refresh the list
+            self._refresh()
+            messagebox.showinfo("Success", f"Deleted entry: {entry['title']}")
 
     def _clear_detail(self) -> None:
-        """Clear the detail pane."""
+        """Clear the selected entry (no inline detail view anymore)."""
         self._selected_entry = None
-        self._meta_label.config(text="")
-        self._delete_btn.grid_remove()  # Hide delete button
-
-        # Clear text area
-        self._detail_text.config(state=tk.NORMAL)
-        self._detail_text.delete("1.0", tk.END)
-        self._detail_text.config(state=tk.DISABLED)
-
-        # Hide PDF viewer and clear images
-        self._pdf_frame.grid_remove()
-        for widget in self._pdf_inner_frame.winfo_children():
-            widget.destroy()
-        self._pdf_images.clear()
-
-        # Hide HTML viewer and clear images
-        self._html_frame.grid_remove()
-        self._html_images.clear()
-
-        # Show text area by default
-        self._detail_text.grid(row=1, column=0, sticky="nsew")
+        # Detail is now in a separate window, nothing to clear here
 
     def _delete_selected(self) -> None:
         """Delete the currently selected entry after confirmation."""
@@ -1437,7 +1153,9 @@ class SearchWindow:
         entry = get_entry_by_id(entry_id)
         if entry:
             self.show()
-            self._show_detail(entry)
+            self._selected_entry = entry
+            # Open detail window
+            self._detail_window.show(entry, on_delete_callback=self._on_entry_deleted_from_detail)
 
     def toggle(self) -> None:
         """Toggle window visibility."""

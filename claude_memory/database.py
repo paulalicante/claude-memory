@@ -155,6 +155,78 @@ def init_database() -> None:
             END
         """)
 
+    # Watched folders table - directories to index and monitor
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS watched_folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT UNIQUE NOT NULL,
+            is_monitored INTEGER DEFAULT 0,
+            last_scan_date DATETIME,
+            file_count INTEGER DEFAULT 0,
+            enabled INTEGER DEFAULT 1,
+            added_date DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_folder_path ON watched_folders(path)")
+
+    # Indexed files table - lightweight references to files on disk
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS indexed_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT UNIQUE NOT NULL,
+            file_name TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            file_size INTEGER,
+            modified_date DATETIME,
+            content_preview TEXT,
+            folder_id INTEGER,
+            indexed_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (folder_id) REFERENCES watched_folders(id) ON DELETE CASCADE
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_file_path ON indexed_files(file_path)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_file_type ON indexed_files(file_type)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_file_folder ON indexed_files(folder_id)")
+
+    # Check if files FTS table exists
+    cursor.execute("""
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name='files_fts'
+    """)
+    if not cursor.fetchone():
+        # Create FTS5 virtual table for file content
+        cursor.execute("""
+            CREATE VIRTUAL TABLE files_fts USING fts5(
+                file_name, file_path, content_preview,
+                content='indexed_files',
+                content_rowid='id'
+            )
+        """)
+
+        # Triggers to keep files FTS in sync
+        cursor.execute("""
+            CREATE TRIGGER files_ai AFTER INSERT ON indexed_files BEGIN
+                INSERT INTO files_fts(rowid, file_name, file_path, content_preview)
+                VALUES (new.id, new.file_name, new.file_path, new.content_preview);
+            END
+        """)
+
+        cursor.execute("""
+            CREATE TRIGGER files_ad AFTER DELETE ON indexed_files BEGIN
+                INSERT INTO files_fts(files_fts, rowid, file_name, file_path, content_preview)
+                VALUES('delete', old.id, old.file_name, old.file_path, old.content_preview);
+            END
+        """)
+
+        cursor.execute("""
+            CREATE TRIGGER files_au AFTER UPDATE ON indexed_files BEGIN
+                INSERT INTO files_fts(files_fts, rowid, file_name, file_path, content_preview)
+                VALUES('delete', old.id, old.file_name, old.file_path, old.content_preview);
+                INSERT INTO files_fts(rowid, file_name, file_path, content_preview)
+                VALUES (new.id, new.file_name, new.file_path, new.content_preview);
+            END
+        """)
+
     conn.commit()
     conn.close()
 

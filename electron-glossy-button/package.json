@@ -1,0 +1,15 @@
+{
+  "name": "glossy-button-demo",
+  "version": "1.0.0",
+  "description": "Glossy 3D button demo in Electron",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": ["electron", "button", "glossy"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0"
+  }
+}
