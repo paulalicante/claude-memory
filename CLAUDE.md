@@ -73,6 +73,11 @@ gmail-memory-extension/  # Chrome extension for Gmail/web capture
 ├── background.js
 └── popup.html
 
+vscode-memory-extension/ # VS Code extension for conversation capture
+├── package.json
+├── extension.js
+└── README.md
+
 mcp_server.py           # MCP server exposing tools to Claude
 run.pyw                 # Windows launcher (no console)
 config.json             # User configuration
@@ -164,6 +169,25 @@ The `gmail-memory-extension/` folder contains a Chrome extension for Gmail:
 4. Select the `gmail-memory-extension/` folder
 5. Open Gmail - button will appear when viewing emails
 
+## VS Code Extension
+
+The `vscode-memory-extension/` folder contains a VS Code extension for capturing conversations:
+
+**Features:**
+- Status bar button "💾 Save to CM" in VS Code
+- One-click save of current Claude Code conversation
+- Automatically finds most recent conversation file
+- Formats with role markers ([USER], [ASSISTANT])
+- Posts to HTTP server on localhost:8765
+
+**Installation:**
+1. Copy the `vscode-memory-extension/` folder to `%USERPROFILE%\.vscode\extensions\`
+2. Restart VS Code
+3. The "💾 Save to CM" button will appear in the status bar (bottom right)
+4. Click to save your current conversation
+
+**Alternative:** Use Command Palette (Ctrl+Shift+P) and search for "Save Conversation to Claude Memory"
+
 ## Key Features
 
 ### Multi-Select with Checkboxes
@@ -205,10 +229,11 @@ The `gmail-memory-extension/` folder contains a Chrome extension for Gmail:
 - **File actions**: Open files in default app or import as memory entries
 
 ### Conversation Capture
-- **Save Conversation button**: Captures current Claude Code conversation
+- **VS Code Extension**: Status bar button "💾 Save to CM" for one-click conversation saving (recommended)
+- **Desktop App Button**: "💬 Save Conversation" button in PyQt6 UI
 - Finds most recent conversation transcript (.jsonl format)
 - Parses all messages and formats with role markers
-- Saves to memory database with timestamp
+- Posts to HTTP server or saves directly to database
 - Shows confirmation with message count
 
 ### Stability Features

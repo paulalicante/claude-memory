@@ -1,0 +1,42 @@
+{
+  "name": "claude-memory-saver",
+  "displayName": "Claude Memory Saver",
+  "description": "Save Claude Code conversations to Claude Memory with one click",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claude-memory.saveConversation",
+        "title": "Save Conversation to Claude Memory"
+      }
+    ],
+    "configuration": {
+      "title": "Claude Memory",
+      "properties": {
+        "claudeMemory.serverPort": {
+          "type": "number",
+          "default": 8765,
+          "description": "Port where Claude Memory HTTP server is running"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "eslint": "^8.41.0"
+  }
+}
