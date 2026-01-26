@@ -132,6 +132,17 @@ Copy this format to clipboard and it auto-saves:
   - Indexes file_name, file_path, content_preview
   - Auto-synced with triggers on INSERT/UPDATE/DELETE
 
+### Image Search Tables (Added 2026-01)
+- `persons` - Known people (tagged faces)
+  - Stores name and reference face embedding (128-dim BLOB)
+- `face_embeddings` - Detected faces in images
+  - Stores image path, face embedding (128-dim), bounding box coordinates
+  - Foreign key to `persons` for tagged faces
+  - Indexed by person_id and image_path
+- `clip_embeddings` - Semantic scene embeddings
+  - Stores image path and CLIP embedding (512-dim BLOB)
+  - One embedding per image for scene/semantic search
+
 ### Functions
 - `unified_search()` - Searches both memories and indexed files
 - `refresh_folder_index()` - Re-scans and updates file content
@@ -235,6 +246,16 @@ The `vscode-memory-extension/` folder contains a VS Code extension for capturing
 - Parses all messages and formats with role markers
 - Posts to HTTP server or saves directly to database
 - Shows confirmation with message count
+
+### Image Search (Face Recognition + CLIP)
+- **Semantic search**: Find images by person AND/OR scene description
+- **Face recognition**: "Michelle" finds all photos of Michelle
+- **Scene search**: "beach" finds beach scenes using CLIP embeddings
+- **Combined queries**: "Michelle on the beach" requires both person and scene match
+- **Auto-tagging**: Tag one face, automatically find all similar faces
+- **128-dim face embeddings**: Using face_recognition library
+- **512-dim CLIP embeddings**: Semantic scene understanding
+- **Tolerance threshold**: Adjustable face matching strictness
 
 ### Stability Features
 - **Single Instance**: Prevents multiple copies from running
