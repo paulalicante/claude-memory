@@ -63,7 +63,9 @@ claude_memory/           # Main package
 ├── detail_window.py    # Detail/edit window (PyQt6)
 ├── chat_window.py      # AI chat UI
 ├── http_server.py      # HTTP server for browser extensions
-└── pdf_handler.py      # PDF import and text extraction
+├── pdf_handler.py      # PDF import and text extraction
+├── file_indexer.py     # File discovery and indexing system
+└── discovery_dialog.py # File discovery UI dialog (PyQt6)
 
 gmail-memory-extension/  # Chrome extension for Gmail/web capture
 ├── manifest.json
@@ -108,6 +110,27 @@ Copy this format to clipboard and it auto-saves:
 - **Callback system**: Components communicate via callbacks
 - **Threading**: Clipboard watcher, hotkey listener, notifications run in background
 - **Session management**: Auto-creates sessions based on 4-hour inactivity gaps
+
+## Database Schema
+
+### Core Tables
+- `entries` - Memory entries with title, content, category, tags
+- `entries_fts` - FTS5 virtual table for full-text search
+
+### File Indexing Tables (Added 2026-01)
+- `watched_folders` - Folders to monitor and index
+  - Tracks folder path, monitoring status, last scan date, file count
+- `indexed_files` - Lightweight references to files on disk
+  - Stores file path, name, type, size, modified date, content preview
+  - Foreign key to `watched_folders` with CASCADE delete
+- `files_fts` - FTS5 virtual table for file content search
+  - Indexes file_name, file_path, content_preview
+  - Auto-synced with triggers on INSERT/UPDATE/DELETE
+
+### Functions
+- `unified_search()` - Searches both memories and indexed files
+- `refresh_folder_index()` - Re-scans and updates file content
+- `auto_refresh_placeholder_files()` - Updates old placeholder content on startup
 
 ## MCP Tools
 
@@ -167,11 +190,32 @@ The `gmail-memory-extension/` folder contains a Chrome extension for Gmail:
 - Searches in both title and content
 - Category and date filtering
 - Real-time results
+- Hover preview with search term highlighting
+- Unified search across memories and indexed files
+
+### Universal File Indexing
+- **File Discovery Dialog**: Browse and select folders to index
+- **Recursive scanning**: Option to scan all subfolders
+- **File type selection**: Choose which file types to index (.txt, .md, .pdf, .docx, .xlsx, code files, etc.)
+- **Full content extraction**: Extracts text from Word docs, Excel sheets, and PDFs
+- **Lightweight indexing**: Stores file references and previews, not full content
+- **Folder management**: View indexed folders, refresh content, remove folders
+- **Auto-refresh**: Automatically updates placeholder content on startup
+- **Unified search results**: Shows both 📝 memories and 📄 files with visual distinction
+- **File actions**: Open files in default app or import as memory entries
+
+### Conversation Capture
+- **Save Conversation button**: Captures current Claude Code conversation
+- Finds most recent conversation transcript (.jsonl format)
+- Parses all messages and formats with role markers
+- Saves to memory database with timestamp
+- Shows confirmation with message count
 
 ### Stability Features
 - **Single Instance**: Prevents multiple copies from running
 - **Watchdog**: Monitors keyboard hooks, auto-recovers if lost
 - **Crash Logging**: Writes errors to `crash.log` for debugging
+- **Background threads**: File scanning and indexing run without blocking UI
 - Handles desktop switching without crashing
 
 ## UI Migration to PyQt6 (In Progress)
@@ -197,14 +241,22 @@ A new PyQt6-based UI is being developed alongside the existing tkinter UI. The n
 - ✅ Category dropdown with visible arrow indicator
 - ✅ Styled dropdown (dark button, light popup list)
 - ✅ Results list with hover and selection states
+- ✅ Hover preview with fixed z-order and search term highlighting
 - ✅ Database integration (search, recent entries, delete)
-- ✅ Status bar with entry count
+- ✅ Status bar with entry count (shows memories + files separately)
 - ✅ Detail window with text/PDF/HTML viewing
 - ✅ Quick Add dialog for creating entries
 - ✅ PDF Import dialog with preview
-- ✅ Multi-select checkboxes functionality
+- ✅ Multi-select checkboxes functionality (solid green fill when checked)
 - ✅ Remove Duplicates feature (line-by-line merge)
 - ✅ Auto-refresh timer (2-second interval)
+- ✅ File Discovery Dialog with folder browser and file type selection
+- ✅ Unified search (memories + indexed files with 📝/📄 icons)
+- ✅ File actions (Open File, Import to Memory)
+- ✅ Folder refresh and management in Discovery Dialog
+- ✅ Auto-refresh for placeholder content on startup
+- ✅ Save Conversation button (captures Claude Code transcripts)
+- ✅ Background threading for file scanning and indexing
 
 ### Outstanding Tasks
 - ⬜ Port chat window to PyQt6
@@ -234,3 +286,37 @@ A new PyQt6-based UI is being developed alongside the existing tkinter UI. The n
 - Single-instance lock port: 47283
 - Session timeout: 4 hours
 - Max AI tokens: 2048
+
+## File Indexing System
+
+### Supported File Types
+The file indexer supports the following file types:
+- **Plain text**: .txt, .md, .log, .csv, .json, .xml, .yaml, .yml
+- **Documents**: .docx, .doc (Word documents with full text extraction)
+- **Spreadsheets**: .xlsx, .xls (Excel - extracts first 20 rows from active sheet)
+- **PDFs**: .pdf (extracts text from first 3 pages)
+- **Code files**: .py, .js, .java, .cpp, .c, .h, .cs, .html, .css, .sql
+
+### Content Extraction
+- **Plain text files**: Read directly with UTF-8/Latin-1 encoding fallback
+- **Word documents**: Uses `python-docx` to extract all paragraph text
+- **Excel spreadsheets**: Uses `openpyxl` to read cell values from active sheet
+- **PDFs**: Uses `PyMuPDF` (fitz) to extract text from first 3 pages
+- All extracts limited to 1000 characters for preview/search
+
+### Database Storage
+- Files are NOT duplicated into the database
+- Only lightweight references stored: path, name, type, size, modified date
+- Content preview (first 1000 chars) stored for search
+- Uses FTS5 for fast full-text search across file content
+
+### Discovery Dialog Workflow
+1. **Choose Folder**: Browse to select folder, option for recursive scan
+2. **Select File Types**: After scan, choose which file types to index
+3. **Monitoring Options**: Enable/disable active monitoring (watchdog)
+4. **Review Indexed**: View all indexed folders, refresh or remove as needed
+
+### Requirements Added
+- `python-docx>=0.8.11` - Word document parsing
+- `openpyxl>=3.1.0` - Excel spreadsheet parsing
+- `watchdog>=3.0.0` - File system monitoring (future use)
