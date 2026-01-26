@@ -88,6 +88,7 @@ class DiscoveryDialog(QDialog):
         self.index_worker = None
         self.file_type_checkboxes = {}  # {file_type: checkbox}
         self.progress_dialog = None
+        self.progress_bar = None
         self._init_ui()
 
     def _init_ui(self):
@@ -599,27 +600,41 @@ class DiscoveryDialog(QDialog):
         self.progress_dialog.setText(f"Indexing {len(filtered_files)} files...")
         self.progress_dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
 
-        progress_bar = QProgressBar()
-        progress_bar.setMaximum(len(filtered_files))
-        progress_bar.setFormat("Indexing: %v / %m files")
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximum(len(filtered_files))
+        self.progress_bar.setFormat("Indexing: %v / %m files")
 
         layout = self.progress_dialog.layout()
-        layout.addWidget(progress_bar, layout.rowCount(), 0, 1, layout.columnCount())
+        layout.addWidget(self.progress_bar, layout.rowCount(), 0, 1, layout.columnCount())
         self.progress_dialog.show()
 
         # Start indexing in background
         self.index_worker = IndexWorker(folder_id, filtered_files)
-        self.index_worker.progress.connect(lambda curr, total: progress_bar.setValue(curr))
+        self.index_worker.progress.connect(self._on_index_progress)
         self.index_worker.finished.connect(self._on_index_finished)
         self.index_worker.error.connect(self._on_index_error)
         self.index_worker.start()
 
+    def _on_index_progress(self, current: int, total: int):
+        """Update progress bar during indexing."""
+        if self.progress_bar:
+            self.progress_bar.setValue(current)
+            QApplication.processEvents()
+
     def _on_index_finished(self, count: int):
         """Handle indexing completion."""
-        # Close progress dialog
+        # Close progress dialog and clean up
         if self.progress_dialog:
             self.progress_dialog.close()
+            self.progress_dialog.deleteLater()
             self.progress_dialog = None
+
+        if self.progress_bar:
+            self.progress_bar.deleteLater()
+            self.progress_bar = None
+
+        # Process events to ensure dialog is fully closed
+        QApplication.processEvents()
 
         # Re-enable buttons
         self.scan_btn.setEnabled(True)
@@ -641,10 +656,18 @@ class DiscoveryDialog(QDialog):
 
     def _on_index_error(self, error: str):
         """Handle indexing error."""
-        # Close progress dialog
+        # Close progress dialog and clean up
         if self.progress_dialog:
             self.progress_dialog.close()
+            self.progress_dialog.deleteLater()
             self.progress_dialog = None
+
+        if self.progress_bar:
+            self.progress_bar.deleteLater()
+            self.progress_bar = None
+
+        # Process events to ensure dialog is fully closed
+        QApplication.processEvents()
 
         # Re-enable buttons
         self.index_btn.setEnabled(True)
