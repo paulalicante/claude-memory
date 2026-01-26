@@ -147,9 +147,8 @@ class DiscoveryDialog(QDialog):
                 background: white;
             }
             QCheckBox::indicator:checked {
-                background: white;
+                background: #859900;
                 border: 2px solid #859900;
-                image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgdmlld0JveD0iMCAwIDE4IDE4Ij48cGF0aCBmaWxsPSIjODU5OTAwIiBkPSJNNiAxMC4ybC0yLjYtMi42TDIgOS4ybDQgNCA4LTgtMS40LTEuNEw2IDEwLjJ6Ii8+PC9zdmc+);
             }
             QProgressBar {
                 border: 1px solid #D3CBB7;
