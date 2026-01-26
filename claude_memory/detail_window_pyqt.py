@@ -119,6 +119,7 @@ class DetailWindow(QWidget):
         super().__init__()
         self._current_entry: Optional[dict] = None
         self._on_delete_callback: Optional[Callable] = None
+        self._on_close_callback: Optional[Callable] = None
 
         # PDF viewer storage
         self._pdf_images: List[QPixmap] = []
@@ -230,10 +231,20 @@ class DetailWindow(QWidget):
         self.scroll_area.setWidget(self.content_widget)
         main_layout.addWidget(self.scroll_area)
 
-    def show_entry(self, entry: dict, on_delete_callback: Optional[Callable] = None):
+    def show_entry(self, entry: dict, on_delete_callback: Optional[Callable] = None,
+                   on_close_callback: Optional[Callable] = None, parent_window=None):
         """Show the detail window with the given entry."""
         self._current_entry = entry
         self._on_delete_callback = on_delete_callback
+        self._on_close_callback = on_close_callback
+
+        # Position near parent window if provided
+        if parent_window:
+            parent_geo = parent_window.geometry()
+            # Position to the right of parent with some offset
+            x = parent_geo.x() + parent_geo.width() + 20
+            y = parent_geo.y()
+            self.move(x, y)
 
         self._display_entry(entry)
         self.show()
@@ -449,3 +460,9 @@ class DetailWindow(QWidget):
         if self._current_entry and self._on_delete_callback:
             self._on_delete_callback(self._current_entry)
             self.close()
+
+    def closeEvent(self, event):
+        """Handle window close event."""
+        if self._on_close_callback:
+            self._on_close_callback()
+        event.accept()

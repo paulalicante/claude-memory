@@ -158,6 +158,7 @@ class SearchWindow(QMainWindow):
         self._chat_window = chat_window
         self._results: List[dict] = []
         self._selected_entry: Optional[dict] = None
+        self._displayed_entry_id: Optional[int] = None  # Track which entry is currently shown in detail window
 
         # Auto-refresh
         self._auto_refresh_timer = None
@@ -532,16 +533,35 @@ class SearchWindow(QMainWindow):
         self.stats_label.setText(f"{len(self._results)} entries")
 
     def _on_item_click(self, item):
-        """Open detail window on single click"""
+        """Open detail window on single click (toggle if same entry clicked again)"""
         entry = item.data(Qt.ItemDataRole.UserRole)
         if entry:
+            entry_id = entry.get('id')
             self._selected_entry = entry
-            self._detail_window.show_entry(entry, on_delete_callback=self._on_entry_deleted)
+
+            # Toggle: if clicking the same entry that's already displayed, close the window
+            if self._displayed_entry_id == entry_id and self._detail_window.isVisible():
+                self._detail_window.hide()
+                self._displayed_entry_id = None
+            else:
+                # Show the detail window positioned next to this window
+                self._detail_window.show_entry(entry,
+                                               on_delete_callback=self._on_entry_deleted,
+                                               on_close_callback=self._on_detail_closed,
+                                               parent_window=self)
+                self._displayed_entry_id = entry_id
 
     def _on_entry_deleted(self, entry):
         """Callback when an entry is deleted from detail window"""
+        # Clear the displayed entry tracking
+        self._displayed_entry_id = None
         # Refresh the search results
         self._do_search()
+
+    def _on_detail_closed(self):
+        """Callback when detail window is closed"""
+        # Clear the displayed entry tracking
+        self._displayed_entry_id = None
 
     def eventFilter(self, obj, event):
         """Handle events for the results list - hide preview on mouse leave"""
