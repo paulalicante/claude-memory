@@ -588,10 +588,39 @@ class SearchWindow(QMainWindow):
 
         # Get content and format for fixed-size preview
         content = entry.get('content', '')
-        # Limit to reasonable character count that fits in the box
-        preview_text = content[:400]
-        if len(content) > 400:
-            preview_text += '...'
+
+        # Check if there's an active search query
+        search_query = self.search_input.text().strip()
+
+        if search_query:
+            # Find the search term in the content (case-insensitive)
+            content_lower = content.lower()
+            query_lower = search_query.lower()
+            match_pos = content_lower.find(query_lower)
+
+            if match_pos != -1:
+                # Extract context around the match (150 chars before and after)
+                context_size = 150
+                start = max(0, match_pos - context_size)
+                end = min(len(content), match_pos + len(search_query) + context_size)
+
+                preview_text = content[start:end]
+
+                # Add ellipsis if we're not at the start/end
+                if start > 0:
+                    preview_text = '...' + preview_text
+                if end < len(content):
+                    preview_text = preview_text + '...'
+            else:
+                # Fallback to beginning if search term not found
+                preview_text = content[:400]
+                if len(content) > 400:
+                    preview_text += '...'
+        else:
+            # No search query - show from beginning
+            preview_text = content[:400]
+            if len(content) > 400:
+                preview_text += '...'
 
         # Update preview text
         self._hover_preview.setText(preview_text)
