@@ -418,8 +418,7 @@ class SearchWindow(QMainWindow):
             }
         """)
 
-        self.results_list.itemDoubleClicked.connect(self._on_double_click)
-        self.results_list.itemClicked.connect(self._on_select)
+        self.results_list.itemClicked.connect(self._on_item_click)
         self.results_list.setMouseTracking(True)
         self.results_list.itemEntered.connect(self._on_item_hover)
         layout.addWidget(self.results_list)
@@ -481,7 +480,11 @@ class SearchWindow(QMainWindow):
         if query:
             self._results = search_entries(query, category=category)
         else:
-            self._results = get_recent_entries(limit=50)
+            # No query - show recent entries, optionally filtered by category
+            if category:
+                self._results = search_entries("", category=category)
+            else:
+                self._results = get_recent_entries(limit=50)
 
         self._populate_results()
 
@@ -501,14 +504,11 @@ class SearchWindow(QMainWindow):
 
         self.stats_label.setText(f"{len(self._results)} entries")
 
-    def _on_select(self, item):
-        """Handle item selection"""
-        self._selected_entry = item.data(Qt.ItemDataRole.UserRole)
-
-    def _on_double_click(self, item):
-        """Open detail window on double-click"""
+    def _on_item_click(self, item):
+        """Open detail window on single click"""
         entry = item.data(Qt.ItemDataRole.UserRole)
         if entry:
+            self._selected_entry = entry
             self._detail_window.show_entry(entry, on_delete_callback=self._on_entry_deleted)
 
     def _on_entry_deleted(self, entry):
