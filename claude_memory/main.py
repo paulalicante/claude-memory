@@ -20,7 +20,7 @@ from .config import Config
 from .database import init_database, backup_database, get_statistics, add_entry, get_categories
 from .clipboard_watcher import ClipboardWatcher
 from .tray import TrayApp
-from .search_window import SearchWindow
+from .search_window_pyqt import SearchWindowPyQt as SearchWindow
 from .chat_window import ChatWindow
 from .notifications import notify_saved
 from . import http_server
