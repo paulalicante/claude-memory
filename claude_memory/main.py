@@ -230,37 +230,33 @@ class ClaudeMemoryApp:
 
     def _on_search_clicked(self) -> None:
         """Callback when Search is clicked in tray menu."""
-        if self._search_window and self._root:
-            self._root.after(0, self._search_window.show)
+        if self._search_window:
+            self._search_window.show()
+            self._search_window.raise_()
+            self._search_window.activateWindow()
 
     def _on_chat_clicked(self) -> None:
         """Callback when AI Chat is clicked in tray menu."""
-        if self._chat_window and self._root:
-            self._root.after(0, self._chat_window.show)
+        if self._chat_window:
+            self._chat_window.show()
 
     def _on_entry_clicked(self, entry_id: int) -> None:
         """Callback when an entry is clicked in tray menu."""
-        if self._search_window and self._root:
-            self._root.after(0, lambda: self._search_window.show_entry(entry_id))
+        if self._search_window:
+            self._search_window.show_entry(entry_id)
+            self._search_window.show()
+            self._search_window.raise_()
+            self._search_window.activateWindow()
 
     def _on_save_clipboard_clicked(self) -> None:
         """Callback when Save Clipboard is clicked in tray menu."""
-        if self._root:
-            self._root.after(0, self._show_clipboard_save_dialog)
+        # TODO: Implement PyQt6 version of clipboard save dialog
+        print("Save clipboard clicked - not yet implemented in PyQt6")
 
     def _show_clipboard_save_dialog(self) -> None:
         """Show the clipboard save dialog."""
-        try:
-            clipboard_content = pyperclip.paste()
-            if not clipboard_content or not clipboard_content.strip():
-                from tkinter import messagebox
-                messagebox.showinfo("Empty Clipboard", "Clipboard is empty.", parent=self._root)
-                return
-
-            ClipboardSaveDialog(self._root, clipboard_content, on_saved=self._on_entry_saved)
-        except Exception as e:
-            from tkinter import messagebox
-            messagebox.showerror("Error", f"Could not read clipboard: {e}", parent=self._root)
+        # TODO: Implement PyQt6 version
+        pass
 
     def _on_quit(self) -> None:
         """Callback when Quit is clicked."""
@@ -272,8 +268,8 @@ class ClaudeMemoryApp:
             keyboard.unhook_all()
         except Exception:
             pass
-        if self._root:
-            self._root.after(0, self._root.quit)
+        if self._qapp:
+            self._qapp.quit()
 
     def _run_tray(self) -> None:
         """Run the tray app in a separate thread."""
