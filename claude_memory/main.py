@@ -172,7 +172,7 @@ class ClaudeMemoryApp:
         self._search_window: Optional[SearchWindow] = None
         self._chat_window: Optional[ChatWindow] = None
         self._running = False
-        self._root: Optional[tk.Tk] = None
+        self._qapp = None  # QApplication instance
 
     def _setup_database(self) -> None:
         """Initialize and backup the database."""
@@ -204,9 +204,11 @@ class ClaudeMemoryApp:
     def _on_hotkey(self) -> None:
         """Handle global hotkey press."""
         try:
-            if self._search_window and self._root:
-                # Schedule on tkinter's thread
-                self._root.after(0, self._search_window.show)
+            if self._search_window:
+                # Show the PyQt6 window
+                self._search_window.show()
+                self._search_window.raise_()
+                self._search_window.activateWindow()
         except Exception as e:
             print(f"Error in hotkey handler: {e}")
             # Try to re-register the hotkey
@@ -307,6 +309,8 @@ class ClaudeMemoryApp:
 
     def run(self) -> None:
         """Run the application."""
+        from PyQt6.QtWidgets import QApplication
+
         self._running = True
 
         # Initialize database
@@ -315,9 +319,9 @@ class ClaudeMemoryApp:
         # Start HTTP server for external integrations
         self._setup_http_server()
 
-        # Create hidden root window for tkinter event loop with modern theme
-        self._root = ttk.Window(themename="cosmo")
-        self._root.withdraw()  # Hide the root window
+        # Create QApplication for PyQt6
+        self._qapp = QApplication(sys.argv)
+        self._qapp.setQuitOnLastWindowClosed(False)  # Keep running when window is closed
 
         # Create chat window first (search window needs reference to it)
         self._chat_window = ChatWindow()
@@ -343,8 +347,8 @@ class ClaudeMemoryApp:
         tray_thread = threading.Thread(target=self._run_tray, daemon=True)
         tray_thread.start()
 
-        # Run tkinter mainloop in main thread
-        self._root.mainloop()
+        # Run PyQt6 event loop in main thread
+        sys.exit(self._qapp.exec())
 
         # Cleanup
         if self._tray:
