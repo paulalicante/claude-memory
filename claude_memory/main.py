@@ -328,6 +328,9 @@ class ClaudeMemoryApp:
             chat_window=self._chat_window
         )
 
+        # Show window on startup
+        self._search_window.show()
+
         # Setup global hotkey
         self._setup_hotkey()
 

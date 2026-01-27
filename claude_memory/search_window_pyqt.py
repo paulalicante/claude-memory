@@ -1153,6 +1153,11 @@ class SearchWindow(QMainWindow):
         """Hide window"""
         super().hide()
 
+    def closeEvent(self, event):
+        """Handle window close - hide instead of quit"""
+        event.ignore()  # Don't close the window
+        self.hide()     # Just hide it
+
     def toggle(self):
         """Toggle visibility"""
         if self.isVisible():
