@@ -408,6 +408,10 @@ class SearchWindow(QMainWindow):
         btn_tag_faces.clicked.connect(self._launch_face_tagging)
         layout.addWidget(btn_tag_faces)
 
+        btn_find_photos = QPushButton("🔍 Find Photos")
+        btn_find_photos.clicked.connect(self._launch_photo_finder)
+        layout.addWidget(btn_find_photos)
+
         # Multi-select buttons (hidden initially)
         self.btn_delete_multi = QPushButton("🗑 Delete Selected")
         self.btn_delete_multi.clicked.connect(self._delete_multiple)
@@ -769,6 +773,12 @@ class SearchWindow(QMainWindow):
         dialog.exec()
         # Refresh results after tagging
         self._do_search()
+
+    def _launch_photo_finder(self):
+        """Launch the photo folder scanner"""
+        from .image_folder_scanner import ImageFolderScanner
+        dialog = ImageFolderScanner(self)
+        dialog.exec()
 
     def _show_file_actions(self, file_entry):
         """Show action buttons for a file result"""
