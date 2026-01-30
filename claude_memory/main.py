@@ -16,7 +16,7 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 
 from . import constants
-from .config import Config
+from .config import Config, get_app_dir
 from .database import init_database, backup_database, get_statistics, add_entry, get_categories
 from .clipboard_watcher import ClipboardWatcher
 from .tray import TrayApp
@@ -368,7 +368,8 @@ def main():
     def log_crash(error_msg: str):
         """Write crash info to crash.log"""
         try:
-            with open("crash.log", "a", encoding="utf-8") as f:
+            crash_log_path = get_app_dir() / "crash.log"
+            with open(crash_log_path, "a", encoding="utf-8") as f:
                 f.write(f"\n{'='*60}\n")
                 f.write(f"Crash at: {datetime.datetime.now()}\n")
                 f.write(f"{error_msg}\n")

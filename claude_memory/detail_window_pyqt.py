@@ -13,6 +13,8 @@ from PyQt6.QtCore import Qt, QPoint
 from PyQt6.QtGui import QPixmap, QFont
 
 from . import constants
+from .config import get_app_dir
+import os
 
 
 class CustomTitleBar(QWidget):
@@ -332,7 +334,7 @@ class DetailWindow(QWidget):
                 self._show_text_detail(entry)
                 return
 
-            pdf_path = os.path.join("pdfs", pdf_filename)
+            pdf_path = str(get_app_dir() / "pdfs" / pdf_filename)
             if not os.path.exists(pdf_path):
                 self._show_text_detail(entry)
                 return

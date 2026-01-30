@@ -202,5 +202,107 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// =============================================
+// Dynamic extension icon - lights up when connected
+// =============================================
+
+/**
+ * Draw the CM icon on an OffscreenCanvas
+ * @param {number} size - Icon size (16, 32, 48, 128)
+ * @param {boolean} active - Whether server is connected
+ * @returns {ImageData}
+ */
+function drawIcon(size, active) {
+  const canvas = new OffscreenCanvas(size, size);
+  const ctx = canvas.getContext('2d');
+
+  const bgColor = active ? '#268BD2' : '#93A1A1';      // Blue when active, gray when not
+  const glowColor = active ? '#34a853' : 'transparent'; // Green glow when active
+  const textColor = '#FFFFFF';
+
+  // Background circle
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size * 0.45;
+
+  // Glow effect when active
+  if (active) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + size * 0.05, 0, Math.PI * 2);
+    ctx.fillStyle = glowColor;
+    ctx.globalAlpha = 0.4;
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+  }
+
+  // Main circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = bgColor;
+  ctx.fill();
+
+  // "CM" text
+  const fontSize = Math.round(size * 0.38);
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = textColor;
+  ctx.fillText('CM', cx, cy + size * 0.02);
+
+  // Small status dot (bottom-right)
+  const dotR = size * 0.12;
+  const dotX = cx + r * 0.65;
+  const dotY = cy + r * 0.65;
+  ctx.beginPath();
+  ctx.arc(dotX, dotY, dotR + 1, 0, Math.PI * 2);
+  ctx.fillStyle = '#FFFFFF'; // White border
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+  ctx.fillStyle = active ? '#34a853' : '#ea4335'; // Green or red dot
+  ctx.fill();
+
+  return ctx.getImageData(0, 0, size, size);
+}
+
+/**
+ * Update the extension icon based on server status
+ */
+let lastIconState = null;
+
+async function updateIcon() {
+  const health = await checkServerHealth();
+  const active = health.online;
+
+  // Skip if state hasn't changed
+  if (lastIconState === active) return;
+  lastIconState = active;
+
+  try {
+    const imageData = {
+      16: drawIcon(16, active),
+      32: drawIcon(32, active),
+      48: drawIcon(48, active),
+    };
+
+    await chrome.action.setIcon({ imageData });
+    await chrome.action.setTitle({
+      title: active
+        ? 'Claude Memory - Connected'
+        : 'Claude Memory - Not connected'
+    });
+  } catch (e) {
+    console.error('Failed to update icon:', e);
+  }
+}
+
+// Check health and update icon periodically
+updateIcon();
+setInterval(updateIcon, 15000); // Every 15 seconds
+
+// Also update when the service worker wakes up
+chrome.runtime.onStartup.addListener(updateIcon);
+chrome.runtime.onInstalled.addListener(updateIcon);
+
 // Log when extension loads
 console.log('Gmail to Claude Memory: Background service worker loaded');

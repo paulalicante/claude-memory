@@ -61,16 +61,25 @@ claude_memory/           # Main package
 ├── search_window.py    # Search/browse UI (tkinter - legacy)
 ├── search_window_pyqt.py # Search/browse UI (PyQt6 - new)
 ├── detail_window.py    # Detail/edit window (PyQt6)
-├── chat_window.py      # AI chat UI
+├── chat_window.py      # AI chat UI (tkinter - legacy)
+├── chat_window_pyqt.py # AI chat UI (PyQt6 - new)
 ├── http_server.py      # HTTP server for browser extensions
 ├── pdf_handler.py      # PDF import and text extraction
 ├── file_indexer.py     # File discovery and indexing system
 └── discovery_dialog.py # File discovery UI dialog (PyQt6)
 
-gmail-memory-extension/  # Chrome extension for Gmail/web capture
+gmail-memory-extension/  # Chrome extension for Gmail/AI chat capture
 ├── manifest.json
-├── content.js
-├── background.js
+├── background.js        # Service worker, message routing, dynamic icon
+├── content-shared.js    # Shared framework for AI chat capture (CM module)
+├── content-claude.js    # Claude.ai adapter
+├── content-chatgpt.js   # ChatGPT adapter
+├── content-gemini.js    # Google Gemini adapter
+├── content-copilot.js   # Microsoft Copilot adapter
+├── content.js           # Gmail content script
+├── content-docs.js      # Google Docs content script
+├── content-tiktok.js    # TikTok content script
+├── content-whatsapp.js  # WhatsApp content script
 └── popup.html
 
 vscode-memory-extension/ # VS Code extension for conversation capture
@@ -164,21 +173,30 @@ The app runs an HTTP server on port 5000 for browser extension communication:
 
 ## Browser Extension
 
-The `gmail-memory-extension/` folder contains a Chrome extension for Gmail:
+The `gmail-memory-extension/` folder contains a Chrome extension for capturing content from Gmail and AI chat platforms.
 
-**Features:**
-- Manual save button appears when viewing emails
-- Click "💾 Save to Claude Memory" to capture email
-- Preserves HTML formatting (colors, fonts, images, links)
-- Auto-saves sent emails with prompt
-- Stores both HTML (for viewing) and plain text (for search)
+**Supported Platforms:**
+- **Gmail** - Manual save button when viewing emails, preserves HTML formatting
+- **Claude.ai** - Floating CM button captures conversation with buffer management
+- **ChatGPT** - Floating CM button captures conversations (chatgpt.com & chat.openai.com)
+- **Google Gemini** - Floating CM button captures conversations (gemini.google.com)
+- **Microsoft Copilot** - Floating CM button captures conversations (copilot.microsoft.com)
+- **Google Docs** - Save document content
+- **TikTok** - Save comments
+- **WhatsApp Web** - Save messages
+
+**Architecture (AI Chat Capture):**
+- `content-shared.js` - Shared framework exposing `window.CM` with buffer management, floating button UI, toast notifications, save flow via background script, SPA navigation detection
+- Platform adapters (`content-claude.js`, `content-chatgpt.js`, etc.) - Thin scripts defining platform-specific DOM selectors and message extraction, calling `CM.init(platformConfig)`
+- `background.js` - Platform-agnostic service worker handling HTTP POST to Claude Memory app, dynamic extension icon (blue=connected, gray=disconnected)
 
 **Installation:**
 1. Open Chrome and go to `chrome://extensions/`
 2. Enable "Developer mode"
 3. Click "Load unpacked"
 4. Select the `gmail-memory-extension/` folder
-5. Open Gmail - button will appear when viewing emails
+5. The CM button appears automatically on supported AI chat platforms
+6. Gmail save button appears when viewing emails
 
 ## VS Code Extension
 
@@ -305,8 +323,8 @@ A new PyQt6-based UI is being developed alongside the existing tkinter UI. The n
 - ✅ Background threading for file scanning and indexing
 
 ### Outstanding Tasks
-- ⬜ Port chat window to PyQt6
-- ⬜ Add AI Summarize integration to PyQt6 UI
+- ✅ Port chat window to PyQt6 (`chat_window_pyqt.py`)
+- ✅ Add AI Summarize integration to PyQt6 UI (AI Summarize, AI Chat, Chat These Results buttons)
 - ⬜ Update main.py to launch PyQt6 UI instead of tkinter
 - ⬜ Test all functionality (tray integration, hotkeys, clipboard monitoring)
 - ⬜ Migration path for existing users

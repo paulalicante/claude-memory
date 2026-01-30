@@ -10,6 +10,7 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 
 from . import constants
+from .config import get_app_dir
 
 
 class DetailWindow:
@@ -264,8 +265,7 @@ class DetailWindow:
             self._pdf_images.clear()
 
             # Render PDF pages
-            import os
-            pdf_path = os.path.join("pdfs", pdf_filename)
+            pdf_path = str(get_app_dir() / "pdfs" / pdf_filename)
 
             if os.path.exists(pdf_path):
                 page_images = render_pdf_to_images(pdf_path, max_width=650)

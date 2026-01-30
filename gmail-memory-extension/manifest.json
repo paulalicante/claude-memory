@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Claude Memory Saver",
-  "version": "1.5.0",
-  "description": "Save Gmail, Google Docs, Claude.ai, TikTok comments, and WhatsApp messages to Claude Memory.",
+  "version": "1.6.0",
+  "description": "Save Gmail, Google Docs, Claude.ai, ChatGPT, Gemini, Copilot, TikTok comments, and WhatsApp messages to Claude Memory.",
   "permissions": [
     "storage",
     "clipboardRead"
@@ -26,7 +26,22 @@
     },
     {
       "matches": ["https://claude.ai/*"],
-      "js": ["content-claude.js"],
+      "js": ["content-shared.js", "content-claude.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "js": ["content-shared.js", "content-chatgpt.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["content-shared.js", "content-gemini.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://copilot.microsoft.com/*"],
+      "js": ["content-shared.js", "content-copilot.js"],
       "run_at": "document_idle"
     },
     {

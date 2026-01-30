@@ -19,6 +19,8 @@ from .database import search_entries, get_categories, get_entry_by_id, get_recen
 from .detail_window_pyqt import DetailWindow
 from .quick_add_dialog import QuickAddDialog
 from .pdf_import_dialog import PDFImportDialog
+from .ai_query import summarize_search_results, NoAPIKeyError, AIQueryError
+from .chat_window_pyqt import ChatWindow
 
 
 class HoverPreview(QLabel):
@@ -411,6 +413,24 @@ class SearchWindow(QMainWindow):
         btn_find_photos = QPushButton("🔍 Find Photos")
         btn_find_photos.clicked.connect(self._launch_photo_finder)
         layout.addWidget(btn_find_photos)
+
+        # AI Section
+        layout.addSpacing(10)
+        ai_label = QLabel("AI")
+        ai_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Medium))
+        layout.addWidget(ai_label)
+
+        self.btn_ai_summarize = QPushButton("🤖 AI Summarize")
+        self.btn_ai_summarize.clicked.connect(self._do_ai_summarize)
+        layout.addWidget(self.btn_ai_summarize)
+
+        btn_ai_chat = QPushButton("💬 AI Chat")
+        btn_ai_chat.clicked.connect(self._open_chat)
+        layout.addWidget(btn_ai_chat)
+
+        btn_chat_these = QPushButton("📋 Chat These Results")
+        btn_chat_these.clicked.connect(self._chat_about_results)
+        layout.addWidget(btn_chat_these)
 
         # Multi-select buttons (hidden initially)
         self.btn_delete_multi = QPushButton("🗑 Delete Selected")
@@ -1141,6 +1161,117 @@ class SearchWindow(QMainWindow):
                 self._do_search()
         except Exception as e:
             print(f"Error checking for updates: {e}")
+
+    # =====================
+    # AI Features
+    # =====================
+
+    def _do_ai_summarize(self):
+        """Summarize current search results using AI"""
+        # Filter to only memory entries (not files)
+        memory_results = [r for r in self._results if r.get('type') != 'file']
+
+        if not memory_results:
+            QMessageBox.information(
+                self,
+                "No Results",
+                "No memory entries to summarize. Run a search first."
+            )
+            return
+
+        query = self.search_input.text().strip() or "all memories"
+
+        # Show loading state
+        self.btn_ai_summarize.setEnabled(False)
+        self.btn_ai_summarize.setText("🤖 Thinking...")
+        QApplication.processEvents()
+
+        try:
+            summary = summarize_search_results(query, memory_results)
+            self._show_ai_result(summary, f"AI Summary: {query}")
+        except NoAPIKeyError:
+            QMessageBox.warning(
+                self,
+                "No API Key",
+                "No API key configured.\n\n"
+                "Add your Anthropic API key to config.json:\n"
+                '"ai_api_key": "sk-ant-..."'
+            )
+        except AIQueryError as e:
+            QMessageBox.critical(self, "AI Error", f"AI Error: {e}")
+        finally:
+            self.btn_ai_summarize.setEnabled(True)
+            self.btn_ai_summarize.setText("🤖 AI Summarize")
+
+    def _show_ai_result(self, text: str, title: str = "AI Summary"):
+        """Display AI result in a message dialog"""
+        # Use a scrollable dialog for longer content
+        from PyQt6.QtWidgets import QDialog, QTextEdit, QDialogButtonBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.resize(600, 500)
+        dialog.setStyleSheet("background: #FDF6E3;")
+
+        layout = QVBoxLayout(dialog)
+
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setPlainText(text)
+        text_edit.setStyleSheet("""
+            QTextEdit {
+                background: white;
+                color: #073642;
+                border: 2px solid #D3CBB7;
+                border-radius: 6px;
+                padding: 12px;
+                font-size: 11pt;
+                font-family: 'Segoe UI';
+            }
+        """)
+        layout.addWidget(text_edit)
+
+        # Info label
+        info_label = QLabel(f"Based on {len(self._results)} entries")
+        info_label.setStyleSheet("color: #586E75; font-size: 9pt;")
+        layout.addWidget(info_label)
+
+        # Close button
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        button_box.rejected.connect(dialog.close)
+        layout.addWidget(button_box)
+
+        dialog.exec()
+
+    def _open_chat(self):
+        """Open the AI Chat window"""
+        dialog = ChatWindow(self)
+        dialog.exec()
+
+    def _chat_about_results(self):
+        """Open AI Chat with only the current search results as context"""
+        # Filter to only memory entries
+        memory_results = [r for r in self._results if r.get('type') != 'file']
+
+        if not memory_results:
+            QMessageBox.information(
+                self,
+                "No Results",
+                "Run a search first to get results to chat about."
+            )
+            return
+
+        # Build context description
+        query = self.search_input.text().strip()
+        category = self.category_combo.currentText()
+        context_desc = f"'{query}'" if query else "recent entries"
+        if category != "All":
+            context_desc += f" in {category}"
+
+        # Open chat with these specific results
+        dialog = ChatWindow(self)
+        dialog.set_memories(memory_results, context_desc)
+        dialog.exec()
 
     def show(self):
         """Show window"""
