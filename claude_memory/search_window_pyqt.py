@@ -521,6 +521,7 @@ class SearchWindow(QMainWindow):
         self.checkbox_layout.addStretch()
 
         self.checkbox_scroll.setWidget(self.checkbox_container)
+        self.checkbox_scroll.installEventFilter(self)
         layout.addWidget(self.checkbox_scroll)
         self.checkbox_scroll.setVisible(False)  # Hidden by default
 
@@ -645,13 +646,14 @@ class SearchWindow(QMainWindow):
         self._displayed_entry_id = None
 
     def eventFilter(self, obj, event):
-        """Handle events for the results list - hide preview on mouse leave"""
-        if obj == self.results_list and event.type() == event.Type.Leave:
-            self._hover_preview.hide()
+        """Handle events for the results list and checkbox area - hide preview on mouse leave"""
+        if event.type() == event.Type.Leave:
+            if obj == self.results_list or obj == self.checkbox_scroll:
+                self._hover_preview.hide()
         return super().eventFilter(obj, event)
 
     def _on_item_hover(self, item):
-        """Show custom preview when hovering over an item"""
+        """Show custom preview when hovering over an item in the results list"""
         if not item:
             self._hover_preview.hide()
             return
@@ -661,6 +663,10 @@ class SearchWindow(QMainWindow):
             self._hover_preview.hide()
             return
 
+        self._show_hover_preview(entry)
+
+    def _show_hover_preview(self, entry):
+        """Show hover preview for a given entry dict. Used by both normal and multi-select mode."""
         # Get content and format for fixed-size preview
         content = entry.get('content', '')
 
@@ -961,6 +967,7 @@ class SearchWindow(QMainWindow):
             self._populate_checkboxes()
         else:
             # Disable multi-select
+            self._hover_preview.hide()
             self.results_list.setVisible(True)
             self.checkbox_scroll.setVisible(False)
             self.multi_select_notice.setVisible(False)
@@ -1031,6 +1038,11 @@ class SearchWindow(QMainWindow):
             label.setCursor(Qt.CursorShape.PointingHandCursor)
             label.mousePressEvent = lambda e, ent=entry: self._on_checkbox_label_click(ent)
             row_layout.addWidget(label, 1)
+
+            # Enable hover preview on this row
+            row_frame.setMouseTracking(True)
+            row_frame.enterEvent = lambda e, ent=entry: self._show_hover_preview(ent)
+            row_frame.leaveEvent = lambda e: self._hover_preview.hide()
 
             self.checkbox_layout.insertWidget(self.checkbox_layout.count() - 1, row_frame)
             self._check_widgets.append((checkbox, entry, row_frame))

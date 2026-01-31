@@ -4,162 +4,147 @@ const path = require('path');
 const http = require('http');
 
 let statusBarItem;
+let autoSaver;
 
 /**
- * @param {vscode.ExtensionContext} context
+ * Convert a workspace path to Claude's project directory name.
+ * e.g. "g:\My Drive\MyProjects\ClaudeMemory" → "g--My-Drive-MyProjects-ClaudeMemory"
  */
-function activate(context) {
-    console.log('Claude Memory Saver extension is now active');
-
-    // Create status bar item
-    statusBarItem = vscode.window.createStatusBarItem(
-        vscode.StatusBarAlignment.Right,
-        100
-    );
-    statusBarItem.text = '$(save) Save to CM';
-    statusBarItem.tooltip = 'Save current conversation to Claude Memory';
-    statusBarItem.command = 'claude-memory.saveConversation';
-    statusBarItem.show();
-
-    // Register command
-    let disposable = vscode.commands.registerCommand(
-        'claude-memory.saveConversation',
-        saveConversation
-    );
-
-    context.subscriptions.push(disposable, statusBarItem);
+function workspaceToProjectDir(workspacePath) {
+    // Normalize to forward slashes first
+    let normalized = workspacePath.replace(/\\/g, '/');
+    // Remove trailing slash
+    normalized = normalized.replace(/\/$/, '');
+    // Replace drive colon: "g:" → "g--"
+    normalized = normalized.replace(/:/, '--');
+    // Replace slashes with hyphens
+    normalized = normalized.replace(/\//g, '-');
+    // Replace spaces with spaces (Claude keeps spaces)
+    return normalized;
 }
 
-async function saveConversation() {
-    try {
-        // Find the most recent conversation file
-        const conversationFile = await findMostRecentConversation();
-
-        if (!conversationFile) {
-            vscode.window.showWarningMessage(
-                'No Claude Code conversation found. Make sure you have an active conversation.'
-            );
-            return;
-        }
-
-        // Parse the conversation
-        const conversation = parseConversation(conversationFile);
-
-        if (conversation.messages.length === 0) {
-            vscode.window.showWarningMessage('Conversation file is empty.');
-            return;
-        }
-
-        // Format the conversation
-        const formattedText = formatConversation(conversation.messages);
-        const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 16);
-
-        // Create memory entry
-        const memoryEntry = {
-            title: `Claude Conversation - ${timestamp}`,
-            content: formattedText,
-            category: 'Conversation',
-            tags: 'claude,ai,chat,vscode'
-        };
-
-        // Send to Claude Memory server
-        const config = vscode.workspace.getConfiguration('claudeMemory');
-        const port = config.get('serverPort', 8765);
-
-        await sendToMemoryServer(memoryEntry, port);
-
-        vscode.window.showInformationMessage(
-            `✅ Saved conversation (${conversation.messages.length} messages) to Claude Memory!`
-        );
-
-    } catch (error) {
-        console.error('Error saving conversation:', error);
-        vscode.window.showErrorMessage(
-            `Failed to save conversation: ${error.message}`
-        );
-    }
-}
-
-async function findMostRecentConversation() {
+/**
+ * Find the Claude projects base directory.
+ */
+function getClaudeProjectsDir() {
     const homeDir = process.env.HOME || process.env.USERPROFILE;
-    const claudeDir = path.join(homeDir, '.claude', 'projects');
+    return path.join(homeDir, '.claude', 'projects');
+}
 
-    if (!fs.existsSync(claudeDir)) {
+/**
+ * Find the most recent .jsonl conversation file in a project directory.
+ */
+function findActiveConversation(projectDir) {
+    if (!fs.existsSync(projectDir)) {
         return null;
     }
 
-    // Get all project folders
-    const projectFolders = fs.readdirSync(claudeDir)
-        .map(name => path.join(claudeDir, name))
-        .filter(p => fs.statSync(p).isDirectory());
-
-    // Find most recent .jsonl file
     let mostRecentFile = null;
     let mostRecentTime = 0;
 
-    for (const folder of projectFolders) {
-        const jsonlFiles = fs.readdirSync(folder)
-            .filter(name => name.endsWith('.jsonl'))
-            .map(name => path.join(folder, name));
-
-        for (const file of jsonlFiles) {
-            const stat = fs.statSync(file);
+    const entries = fs.readdirSync(projectDir);
+    for (const name of entries) {
+        if (!name.endsWith('.jsonl')) continue;
+        const filePath = path.join(projectDir, name);
+        try {
+            const stat = fs.statSync(filePath);
             if (stat.mtimeMs > mostRecentTime) {
                 mostRecentTime = stat.mtimeMs;
-                mostRecentFile = file;
+                mostRecentFile = filePath;
             }
+        } catch (e) {
+            // Skip unreadable files
         }
     }
 
     return mostRecentFile;
 }
 
-function parseConversation(filePath) {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const lines = content.split('\n').filter(line => line.trim());
-
-    const messages = [];
-
-    for (const line of lines) {
-        try {
-            const msg = JSON.parse(line);
-            messages.push(msg);
-        } catch (e) {
-            // Skip invalid lines
-        }
+/**
+ * Read all lines from a file starting at a byte offset.
+ * Returns { lines: string[], newOffset: number }
+ */
+function readNewLines(filePath, byteOffset) {
+    const stat = fs.statSync(filePath);
+    if (stat.size <= byteOffset) {
+        return { lines: [], newOffset: byteOffset };
     }
 
-    return { messages };
+    const fd = fs.openSync(filePath, 'r');
+    const bufSize = stat.size - byteOffset;
+    const buf = Buffer.alloc(bufSize);
+    fs.readSync(fd, buf, 0, bufSize, byteOffset);
+    fs.closeSync(fd);
+
+    const text = buf.toString('utf8');
+    const lines = text.split('\n').filter(l => l.trim());
+    return { lines, newOffset: stat.size };
 }
 
-function formatConversation(messages) {
-    const formattedMessages = [];
+/**
+ * Parse JSONL lines and extract user/assistant messages.
+ * Returns { messages: [{role, content}], firstPrompt: string }
+ */
+function parseMessages(lines) {
+    const messages = [];
+    let firstPrompt = '';
 
-    for (const msg of messages) {
-        const role = (msg.role || 'unknown').toUpperCase();
-        let content = msg.content || '';
+    for (const line of lines) {
+        let parsed;
+        try {
+            parsed = JSON.parse(line);
+        } catch (e) {
+            continue;
+        }
 
-        // Handle array content (like assistant messages with text blocks)
-        if (Array.isArray(content)) {
+        // Only process user and assistant message types
+        if (parsed.type !== 'user' && parsed.type !== 'assistant') {
+            continue;
+        }
+
+        const msg = parsed.message;
+        if (!msg || !msg.role) continue;
+
+        // Extract text content
+        let content = '';
+        if (typeof msg.content === 'string') {
+            content = msg.content;
+        } else if (Array.isArray(msg.content)) {
             const textParts = [];
-            for (const item of content) {
-                if (typeof item === 'object' && item.type === 'text') {
-                    textParts.push(item.text || '');
-                } else if (typeof item === 'string') {
-                    textParts.push(item);
+            for (const item of msg.content) {
+                if (item.type === 'text' && item.text) {
+                    textParts.push(item.text);
                 }
             }
             content = textParts.join('\n');
         }
 
-        if (content.trim()) {
-            formattedMessages.push(`[${role}]\n${content}\n`);
+        if (!content.trim()) continue;
+
+        // Track first user prompt for title
+        if (msg.role === 'user' && !firstPrompt) {
+            firstPrompt = content.trim().substring(0, 80);
         }
+
+        messages.push({ role: msg.role, content: content.trim() });
     }
 
-    return formattedMessages.join('\n');
+    return { messages, firstPrompt };
 }
 
+/**
+ * Format messages into readable text.
+ */
+function formatMessages(messages) {
+    return messages.map(msg => {
+        const prefix = msg.role === 'user' ? 'Human' : 'Claude';
+        return `**${prefix}:**\n${msg.content}`;
+    }).join('\n\n---\n\n');
+}
+
+/**
+ * Send a memory entry to the Claude Memory HTTP server.
+ */
 function sendToMemoryServer(memoryEntry, port) {
     return new Promise((resolve, reject) => {
         const postData = JSON.stringify(memoryEntry);
@@ -177,28 +162,18 @@ function sendToMemoryServer(memoryEntry, port) {
 
         const req = http.request(options, (res) => {
             let data = '';
-
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-
+            res.on('data', (chunk) => { data += chunk; });
             res.on('end', () => {
                 if (res.statusCode === 200) {
                     resolve(data);
                 } else {
-                    reject(new Error(
-                        `Server returned status ${res.statusCode}. ` +
-                        `Make sure Claude Memory is running.`
-                    ));
+                    reject(new Error(`Server returned status ${res.statusCode}`));
                 }
             });
         });
 
         req.on('error', (e) => {
-            reject(new Error(
-                `Could not connect to Claude Memory server on port ${port}. ` +
-                `Make sure the app is running.`
-            ));
+            reject(new Error(`Could not connect to Claude Memory on port ${port}. Is the app running?`));
         });
 
         req.write(postData);
@@ -206,7 +181,376 @@ function sendToMemoryServer(memoryEntry, port) {
     });
 }
 
+// =============================================
+// AutoSaver
+// =============================================
+
+class AutoSaver {
+    constructor(context) {
+        this.context = context;
+        this.timer = null;
+        this.isRunning = false;
+        this.isSaving = false;
+
+        // State persisted across sessions via workspaceState
+        this.lastByteOffset = context.workspaceState.get('cm.lastByteOffset', 0);
+        this.lastFilePath = context.workspaceState.get('cm.lastFilePath', '');
+        this.partNumber = context.workspaceState.get('cm.partNumber', 0);
+        this.firstPrompt = context.workspaceState.get('cm.firstPrompt', '');
+        this.totalMessagesSaved = context.workspaceState.get('cm.totalMessagesSaved', 0);
+    }
+
+    /**
+     * Persist current state to workspace storage.
+     */
+    async _saveState() {
+        await this.context.workspaceState.update('cm.lastByteOffset', this.lastByteOffset);
+        await this.context.workspaceState.update('cm.lastFilePath', this.lastFilePath);
+        await this.context.workspaceState.update('cm.partNumber', this.partNumber);
+        await this.context.workspaceState.update('cm.firstPrompt', this.firstPrompt);
+        await this.context.workspaceState.update('cm.totalMessagesSaved', this.totalMessagesSaved);
+    }
+
+    /**
+     * Start the auto-save polling timer.
+     */
+    start() {
+        if (this.isRunning) return;
+
+        const config = vscode.workspace.getConfiguration('claudeMemory');
+        const intervalSec = config.get('autoSaveInterval', 60);
+
+        this.isRunning = true;
+        this.timer = setInterval(() => this.check(), intervalSec * 1000);
+
+        // Also run an immediate check
+        this.check();
+
+        console.log(`CM: Auto-save started (every ${intervalSec}s)`);
+    }
+
+    /**
+     * Stop the auto-save timer.
+     */
+    stop() {
+        if (this.timer) {
+            clearInterval(this.timer);
+            this.timer = null;
+        }
+        this.isRunning = false;
+        console.log('CM: Auto-save stopped');
+    }
+
+    /**
+     * Restart with potentially new interval.
+     */
+    restart() {
+        this.stop();
+        this.start();
+    }
+
+    /**
+     * Find the project directory for the current workspace.
+     */
+    _getProjectDir() {
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders || folders.length === 0) return null;
+
+        const workspacePath = folders[0].uri.fsPath;
+        const projectDirName = workspaceToProjectDir(workspacePath);
+        const claudeDir = getClaudeProjectsDir();
+
+        return path.join(claudeDir, projectDirName);
+    }
+
+    /**
+     * Check for new conversation content and auto-save if found.
+     */
+    async check() {
+        if (this.isSaving) return;
+
+        try {
+            const projectDir = this._getProjectDir();
+            if (!projectDir) return;
+
+            const conversationFile = findActiveConversation(projectDir);
+            if (!conversationFile) return;
+
+            // If conversation file changed (new session), reset offset
+            if (conversationFile !== this.lastFilePath) {
+                console.log(`CM: New conversation detected: ${path.basename(conversationFile)}`);
+                this.lastFilePath = conversationFile;
+                this.lastByteOffset = 0;
+                this.partNumber = 0;
+                this.firstPrompt = '';
+                this.totalMessagesSaved = 0;
+                await this._saveState();
+            }
+
+            // Check if file has grown
+            let stat;
+            try {
+                stat = fs.statSync(conversationFile);
+            } catch (e) {
+                return;
+            }
+
+            if (stat.size <= this.lastByteOffset) {
+                // No new content
+                updateStatusBar('saved');
+                return;
+            }
+
+            // Read new lines
+            const { lines, newOffset } = readNewLines(conversationFile, this.lastByteOffset);
+            if (lines.length === 0) {
+                this.lastByteOffset = newOffset;
+                await this._saveState();
+                return;
+            }
+
+            // Parse messages
+            const { messages, firstPrompt } = parseMessages(lines);
+            if (messages.length === 0) {
+                // New lines but no user/assistant messages (just progress events etc.)
+                this.lastByteOffset = newOffset;
+                await this._saveState();
+                return;
+            }
+
+            // Track first prompt for title
+            if (!this.firstPrompt && firstPrompt) {
+                this.firstPrompt = firstPrompt;
+            }
+
+            // Format and save
+            this.isSaving = true;
+            updateStatusBar('syncing');
+
+            this.partNumber++;
+            const formattedText = formatMessages(messages);
+
+            const titleBase = this.firstPrompt || 'Conversation';
+            const titlePrompt = titleBase.length > 50 ? titleBase.substring(0, 50) + '...' : titleBase;
+            const title = `Claude Code: ${titlePrompt} (Part ${this.partNumber})`;
+
+            const config = vscode.workspace.getConfiguration('claudeMemory');
+            const port = config.get('serverPort', 8765);
+
+            const memoryEntry = {
+                title: title,
+                content: formattedText,
+                category: 'conversation',
+                tags: 'claude-code, auto-save, vscode'
+            };
+
+            try {
+                await sendToMemoryServer(memoryEntry, port);
+
+                this.lastByteOffset = newOffset;
+                this.totalMessagesSaved += messages.length;
+                await this._saveState();
+
+                updateStatusBar('saved');
+                console.log(`CM: Auto-saved Part ${this.partNumber} (${messages.length} messages, ${this.totalMessagesSaved} total)`);
+            } catch (e) {
+                updateStatusBar('error');
+                console.error('CM: Auto-save failed:', e.message);
+            }
+
+            this.isSaving = false;
+
+        } catch (e) {
+            this.isSaving = false;
+            updateStatusBar('error');
+            console.error('CM: Auto-save check error:', e);
+        }
+    }
+}
+
+// =============================================
+// Status bar
+// =============================================
+
+function updateStatusBar(state) {
+    if (!statusBarItem) return;
+
+    switch (state) {
+        case 'auto':
+            statusBarItem.text = '$(sync) CM: Auto';
+            statusBarItem.tooltip = 'Claude Memory: Auto-save enabled. Click to toggle.';
+            statusBarItem.backgroundColor = undefined;
+            break;
+        case 'syncing':
+            statusBarItem.text = '$(sync~spin) CM: Saving...';
+            statusBarItem.tooltip = 'Claude Memory: Saving conversation...';
+            statusBarItem.backgroundColor = undefined;
+            break;
+        case 'saved':
+            statusBarItem.text = '$(check) CM: Saved';
+            statusBarItem.tooltip = `Claude Memory: Up to date (${autoSaver ? autoSaver.totalMessagesSaved : 0} msgs saved). Click to toggle.`;
+            statusBarItem.backgroundColor = undefined;
+            break;
+        case 'off':
+            statusBarItem.text = '$(circle-slash) CM: Off';
+            statusBarItem.tooltip = 'Claude Memory: Auto-save disabled. Click to enable.';
+            statusBarItem.backgroundColor = undefined;
+            break;
+        case 'error':
+            statusBarItem.text = '$(error) CM: Err';
+            statusBarItem.tooltip = 'Claude Memory: Connection error. Is the app running?';
+            statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+            break;
+    }
+}
+
+// =============================================
+// Manual save (full conversation)
+// =============================================
+
+async function saveConversationManual() {
+    try {
+        if (!autoSaver) {
+            vscode.window.showWarningMessage('Claude Memory auto-saver not initialized.');
+            return;
+        }
+
+        const projectDir = autoSaver._getProjectDir();
+        if (!projectDir) {
+            vscode.window.showWarningMessage('No workspace folder open.');
+            return;
+        }
+
+        const conversationFile = findActiveConversation(projectDir);
+        if (!conversationFile) {
+            vscode.window.showWarningMessage('No Claude Code conversation found.');
+            return;
+        }
+
+        // Read entire file
+        const { lines } = readNewLines(conversationFile, 0);
+        const { messages, firstPrompt } = parseMessages(lines);
+
+        if (messages.length === 0) {
+            vscode.window.showWarningMessage('Conversation is empty.');
+            return;
+        }
+
+        const formattedText = formatMessages(messages);
+        const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 16);
+        const titlePrompt = firstPrompt ? firstPrompt.substring(0, 50) : 'Conversation';
+
+        const config = vscode.workspace.getConfiguration('claudeMemory');
+        const port = config.get('serverPort', 8765);
+
+        const memoryEntry = {
+            title: `Claude Code: ${titlePrompt} - ${timestamp}`,
+            content: formattedText,
+            category: 'conversation',
+            tags: 'claude-code, manual-save, vscode'
+        };
+
+        await sendToMemoryServer(memoryEntry, port);
+
+        vscode.window.showInformationMessage(
+            `Saved ${messages.length} messages to Claude Memory!`
+        );
+
+    } catch (error) {
+        vscode.window.showErrorMessage(`Failed to save: ${error.message}`);
+    }
+}
+
+// =============================================
+// Toggle auto-save
+// =============================================
+
+function toggleAutoSave() {
+    const config = vscode.workspace.getConfiguration('claudeMemory');
+    const current = config.get('autoSave', true);
+
+    config.update('autoSave', !current, vscode.ConfigurationTarget.Global).then(() => {
+        if (!current) {
+            // Turning on
+            autoSaver.start();
+            updateStatusBar('auto');
+            vscode.window.showInformationMessage('Claude Memory: Auto-save enabled');
+        } else {
+            // Turning off
+            autoSaver.stop();
+            updateStatusBar('off');
+            vscode.window.showInformationMessage('Claude Memory: Auto-save disabled');
+        }
+    });
+}
+
+// =============================================
+// Extension lifecycle
+// =============================================
+
+/**
+ * @param {vscode.ExtensionContext} context
+ */
+function activate(context) {
+    console.log('Claude Memory Saver v2.0 active');
+
+    // Status bar
+    statusBarItem = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Right,
+        100
+    );
+    statusBarItem.command = 'claude-memory.toggleAutoSave';
+    statusBarItem.show();
+
+    // AutoSaver
+    autoSaver = new AutoSaver(context);
+
+    // Start auto-save if enabled
+    const config = vscode.workspace.getConfiguration('claudeMemory');
+    if (config.get('autoSave', true)) {
+        autoSaver.start();
+        updateStatusBar('auto');
+    } else {
+        updateStatusBar('off');
+    }
+
+    // Commands
+    const saveCmd = vscode.commands.registerCommand(
+        'claude-memory.saveConversation',
+        saveConversationManual
+    );
+
+    const toggleCmd = vscode.commands.registerCommand(
+        'claude-memory.toggleAutoSave',
+        toggleAutoSave
+    );
+
+    // Watch for settings changes
+    const configWatcher = vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('claudeMemory.autoSaveInterval')) {
+            if (autoSaver.isRunning) {
+                autoSaver.restart();
+            }
+        }
+        if (e.affectsConfiguration('claudeMemory.autoSave')) {
+            const enabled = vscode.workspace.getConfiguration('claudeMemory').get('autoSave', true);
+            if (enabled && !autoSaver.isRunning) {
+                autoSaver.start();
+                updateStatusBar('auto');
+            } else if (!enabled && autoSaver.isRunning) {
+                autoSaver.stop();
+                updateStatusBar('off');
+            }
+        }
+    });
+
+    context.subscriptions.push(saveCmd, toggleCmd, statusBarItem, configWatcher);
+}
+
 function deactivate() {
+    if (autoSaver) {
+        autoSaver.stop();
+    }
     if (statusBarItem) {
         statusBarItem.dispose();
     }

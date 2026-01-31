@@ -200,22 +200,31 @@ The `gmail-memory-extension/` folder contains a Chrome extension for capturing c
 
 ## VS Code Extension
 
-The `vscode-memory-extension/` folder contains a VS Code extension for capturing conversations:
+The `vscode-memory-extension/` folder contains a VS Code extension for capturing Claude Code conversations with auto-save:
 
 **Features:**
-- Status bar button "💾 Save to CM" in VS Code
-- One-click save of current Claude Code conversation
-- Automatically finds most recent conversation file
-- Formats with role markers ([USER], [ASSISTANT])
-- Posts to HTTP server on localhost:8765
+- **Auto-save** — continuously monitors conversation files and saves new messages automatically
+- **Incremental saves** — only saves new content since last save (Part 1, Part 2, etc.)
+- **Crash resilience** — state persisted to workspaceState; survives VS Code restarts
+- **Status bar indicator** — shows auto-save status (Auto/Saved/Off/Err), click to toggle
+- **Manual save** — Command Palette: "Save Conversation to Claude Memory" saves full conversation
+- Maps workspace path to `~/.claude/projects/` directory automatically
+- Reads `.jsonl` conversation files, extracts user/assistant messages
+
+**Settings:**
+- `claudeMemory.autoSave` — enable/disable auto-save (default: true)
+- `claudeMemory.autoSaveInterval` — seconds between checks (default: 60, range 10-600)
+- `claudeMemory.serverPort` — Claude Memory HTTP server port (default: 8765)
 
 **Installation:**
 1. Copy the `vscode-memory-extension/` folder to `%USERPROFILE%\.vscode\extensions\`
 2. Restart VS Code
-3. The "💾 Save to CM" button will appear in the status bar (bottom right)
-4. Click to save your current conversation
+3. Status bar shows "CM: Auto" (bottom right) — auto-save is running
+4. Click status bar item to toggle auto-save on/off
 
-**Alternative:** Use Command Palette (Ctrl+Shift+P) and search for "Save Conversation to Claude Memory"
+**Commands (Ctrl+Shift+P):**
+- "Save Conversation to Claude Memory" — manual full conversation save
+- "Claude Memory: Toggle Auto-Save" — enable/disable auto-save
 
 ## Key Features
 

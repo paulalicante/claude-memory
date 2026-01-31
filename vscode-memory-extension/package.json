@@ -1,8 +1,8 @@
 {
   "name": "claude-memory-saver",
   "displayName": "Claude Memory Saver",
-  "description": "Save Claude Code conversations to Claude Memory with one click",
-  "version": "1.0.0",
+  "description": "Auto-save Claude Code conversations to Claude Memory with crash resilience",
+  "version": "2.0.0",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -18,6 +18,10 @@
       {
         "command": "claude-memory.saveConversation",
         "title": "Save Conversation to Claude Memory"
+      },
+      {
+        "command": "claude-memory.toggleAutoSave",
+        "title": "Claude Memory: Toggle Auto-Save"
       }
     ],
     "configuration": {
@@ -27,6 +31,18 @@
           "type": "number",
           "default": 8765,
           "description": "Port where Claude Memory HTTP server is running"
+        },
+        "claudeMemory.autoSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically save new conversation messages to Claude Memory"
+        },
+        "claudeMemory.autoSaveInterval": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 600,
+          "description": "Seconds between auto-save checks (10-600)"
         }
       }
     }
