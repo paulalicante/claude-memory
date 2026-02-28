@@ -1,5 +1,12 @@
 # Claude Memory
 
+**Claude:** Always read this file first when working on this project. **Update this CLAUDE.md proactively:**
+- After every feature implementation or bug fix
+- After debugging sessions
+- After any design decisions or workarounds
+- When switching focus areas
+- At the end of every work session — do not wait to be asked
+
 A Windows desktop application that captures and stores important information from Claude conversations with AI-powered memory management.
 
 ## What It Does
@@ -66,7 +73,8 @@ claude_memory/           # Main package
 ├── http_server.py      # HTTP server for browser extensions
 ├── pdf_handler.py      # PDF import and text extraction
 ├── file_indexer.py     # File discovery and indexing system
-└── discovery_dialog.py # File discovery UI dialog (PyQt6)
+├── discovery_dialog.py # File discovery UI dialog (PyQt6)
+└── observer.py         # Daily observations & weekly reflections (Mastra-inspired)
 
 gmail-memory-extension/  # Chrome extension for Gmail/AI chat capture
 ├── manifest.json
@@ -87,11 +95,18 @@ vscode-memory-extension/ # VS Code extension for conversation capture
 ├── extension.js
 └── README.md
 
+otterly-memory-mcpb/    # Claude Desktop extension (.mcpb)
+├── manifest.json
+├── package.json
+├── server/index.js     # MCP server (uses Python subprocess for SQLite)
+└── test/test-server.js
+
 mcp_server.py           # MCP server exposing tools to Claude
 run.pyw                 # Windows launcher (no console)
 config.json             # User configuration
 memory.db               # SQLite database
 pdfs/                   # Stored PDF files
+setup_observer_task.bat # Setup Windows scheduled tasks for observer
 ```
 
 ## Memory Block Format
@@ -177,16 +192,23 @@ The `gmail-memory-extension/` folder contains a Chrome extension for capturing c
 
 **Supported Platforms:**
 - **Gmail** - Manual save button when viewing emails, preserves HTML formatting
-- **Claude.ai** - Floating CM button captures conversation with buffer management
-- **ChatGPT** - Floating CM button captures conversations (chatgpt.com & chat.openai.com)
-- **Google Gemini** - Floating CM button captures conversations (gemini.google.com)
-- **Microsoft Copilot** - Floating CM button captures conversations (copilot.microsoft.com)
+- **Claude.ai** - Auto-saves conversation every 60s + on conversation switch
+- **ChatGPT** - Auto-saves conversations (chatgpt.com & chat.openai.com)
+- **Google Gemini** - Auto-saves conversations (gemini.google.com)
+- **Microsoft Copilot** - Auto-saves conversations (copilot.microsoft.com)
 - **Google Docs** - Save document content
 - **TikTok** - Save comments
 - **WhatsApp Web** - Save messages
 
+**Auto-Save System (AI Chat Platforms):**
+- **Timer-based:** Saves every 60 seconds if there are new unsaved messages (silent, no toast)
+- **Threshold-based:** Saves immediately when buffer hits 90% capacity (13,500 chars)
+- **Navigation-based:** Saves before conversation switch (URL change or popstate)
+- **Incremental parts:** Each save is a numbered part (Part 1, Part 2, etc.) like the VS Code extension
+- **Minimal UI:** Tiny 10px status dot in bottom-right corner (blue = connected/saved, green = buffering, grey = disconnected)
+
 **Architecture (AI Chat Capture):**
-- `content-shared.js` - Shared framework exposing `window.CM` with buffer management, floating button UI, toast notifications, save flow via background script, SPA navigation detection
+- `content-shared.js` - Shared framework exposing `window.CM` with auto-save timer, buffer management, floating button UI, toast notifications, save flow via background script, SPA navigation detection
 - Platform adapters (`content-claude.js`, `content-chatgpt.js`, etc.) - Thin scripts defining platform-specific DOM selectors and message extraction, calling `CM.init(platformConfig)`
 - `background.js` - Platform-agnostic service worker handling HTTP POST to Claude Memory app, dynamic extension icon (blue=connected, gray=disconnected)
 
@@ -350,6 +372,50 @@ A new PyQt6-based UI is being developed alongside the existing tkinter UI. The n
 - Accent blue: `#268BD2`
 - Text on light: `#073642`
 - Text on dark: `#FDF6E3`
+
+## Observer System (Mastra-inspired)
+
+Automatically extracts insights from conversations, inspired by Mastra's Observational Memory.
+
+### How It Works
+1. **Daily Observations** — At midnight, reviews last 24h of conversations and extracts:
+   - User preferences and working style
+   - Decisions made and their reasoning
+   - Projects being worked on
+   - Technical knowledge/patterns
+   - Tagged observations: `[preference]`, `[decision]`, `[project]`, `[technical]`, `[person]`, `[pattern]`
+
+2. **Weekly Reflections** — Sundays at 1am, reviews observations and identifies:
+   - Recurring themes
+   - Project status and progress
+   - Non-obvious connections
+   - Optional recommendations
+
+### Running Manually
+```bash
+# Create daily observation
+python -m claude_memory.observer observe
+
+# Create weekly reflection
+python -m claude_memory.observer reflect
+
+# Both
+python -m claude_memory.observer both
+```
+
+### Setting Up Scheduled Tasks
+```bash
+# Run setup script (creates Windows scheduled tasks)
+setup_observer_task.bat
+
+# Or manually:
+schtasks /create /tn "Otterly Memory - Daily Observer" /tr "python observer.py observe" /sc daily /st 00:00
+schtasks /create /tn "Otterly Memory - Weekly Reflection" /tr "python observer.py reflect" /sc weekly /d SUN /st 01:00
+```
+
+### Categories Created
+- `observation` — Daily extracted facts (tagged with `[type]`)
+- `reflection` — Weekly pattern analysis
 
 ## Constants
 

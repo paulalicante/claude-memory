@@ -4,6 +4,7 @@ const path = require('path');
 const http = require('http');
 
 let statusBarItem;
+let saveNowItem;
 let autoSaver;
 
 /**
@@ -15,11 +16,12 @@ function workspaceToProjectDir(workspacePath) {
     let normalized = workspacePath.replace(/\\/g, '/');
     // Remove trailing slash
     normalized = normalized.replace(/\/$/, '');
-    // Replace drive colon: "g:" → "g--"
-    normalized = normalized.replace(/:/, '--');
-    // Replace slashes with hyphens
+    // Replace drive letter + colon + slash: "g:/" → "g--"
+    normalized = normalized.replace(/^([a-zA-Z]):\//, '$1--');
+    // Replace remaining slashes with hyphens
     normalized = normalized.replace(/\//g, '-');
-    // Replace spaces with spaces (Claude keeps spaces)
+    // Replace spaces with hyphens
+    normalized = normalized.replace(/ /g, '-');
     return normalized;
 }
 
@@ -152,7 +154,7 @@ function sendToMemoryServer(memoryEntry, port) {
         const options = {
             hostname: 'localhost',
             port: port,
-            path: '/memory',
+            path: '/api/memories',
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -164,7 +166,7 @@ function sendToMemoryServer(memoryEntry, port) {
             let data = '';
             res.on('data', (chunk) => { data += chunk; });
             res.on('end', () => {
-                if (res.statusCode === 200) {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
                     resolve(data);
                 } else {
                     reject(new Error(`Server returned status ${res.statusCode}`));
@@ -494,13 +496,23 @@ function toggleAutoSave() {
 function activate(context) {
     console.log('Claude Memory Saver v2.0 active');
 
-    // Status bar
+    // Status bar — auto-save indicator (click to toggle)
     statusBarItem = vscode.window.createStatusBarItem(
         vscode.StatusBarAlignment.Right,
         100
     );
     statusBarItem.command = 'claude-memory.toggleAutoSave';
     statusBarItem.show();
+
+    // Status bar — Save Now button
+    saveNowItem = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Right,
+        99
+    );
+    saveNowItem.text = '$(cloud-upload) CM Save';
+    saveNowItem.tooltip = 'Save full conversation to Claude Memory now';
+    saveNowItem.command = 'claude-memory.saveConversation';
+    saveNowItem.show();
 
     // AutoSaver
     autoSaver = new AutoSaver(context);
@@ -544,7 +556,7 @@ function activate(context) {
         }
     });
 
-    context.subscriptions.push(saveCmd, toggleCmd, statusBarItem, configWatcher);
+    context.subscriptions.push(saveCmd, toggleCmd, statusBarItem, saveNowItem, configWatcher);
 }
 
 function deactivate() {

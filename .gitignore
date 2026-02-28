@@ -27,3 +27,5 @@ Thumbs.db
 
 # Backups
 backups/
+otterly-memory-mcpb/node_modules/
+*.mcpb

@@ -24,6 +24,13 @@
         "title": "Claude Memory: Toggle Auto-Save"
       }
     ],
+    "keybindings": [
+      {
+        "command": "claude-memory.saveConversation",
+        "key": "ctrl+shift+alt+s",
+        "when": "true"
+      }
+    ],
     "configuration": {
       "title": "Claude Memory",
       "properties": {

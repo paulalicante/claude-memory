@@ -1,0 +1,23 @@
+{
+  "name": "otterly-memory-mcpb",
+  "version": "1.0.0",
+  "description": "Otterly Memory Saver - Claude Desktop Extension",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node test/test-server.js",
+    "pack": "mcpb pack"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "otterly",
+    "memory"
+  ],
+  "author": "Paul Ward",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "better-sqlite3": "^11.0.0"
+  }
+}

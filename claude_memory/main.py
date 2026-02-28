@@ -19,11 +19,13 @@ from . import constants
 from .config import Config, get_app_dir
 from .database import init_database, backup_database, get_statistics, add_entry, get_categories
 from .clipboard_watcher import ClipboardWatcher
+from .desktop_watcher import DesktopWatcher
 from .tray import TrayApp
 from .search_window_pyqt import SearchWindow
 from .chat_window import ChatWindow
 from .notifications import notify_saved
 from . import http_server
+from .floating_button import create_floating_button
 
 
 # Single instance lock
@@ -168,6 +170,7 @@ class ClaudeMemoryApp:
     def __init__(self):
         self._config = Config()
         self._watcher: Optional[ClipboardWatcher] = None
+        self._desktop_watcher: Optional[DesktopWatcher] = None
         self._tray: Optional[TrayApp] = None
         self._search_window: Optional[SearchWindow] = None
         self._chat_window: Optional[ChatWindow] = None
@@ -261,15 +264,49 @@ class ClaudeMemoryApp:
     def _on_quit(self) -> None:
         """Callback when Quit is clicked."""
         self._running = False
+        
+        # Stop watchers first
         if self._watcher:
-            self._watcher.stop()
-        http_server.stop_server()
+            try:
+                self._watcher.stop()
+            except Exception:
+                pass
+        if self._desktop_watcher:
+            try:
+                self._desktop_watcher.stop()
+            except Exception:
+                pass
+        
+        # Stop HTTP server
+        try:
+            http_server.stop_server()
+        except Exception:
+            pass
+        
+        # Unhook keyboard
         try:
             keyboard.unhook_all()
         except Exception:
             pass
+        
+        # Stop tray
+        if self._tray:
+            try:
+                self._tray.stop()
+            except Exception:
+                pass
+        
+        # Quit Qt event loop
         if self._qapp:
             self._qapp.quit()
+        
+        # Force exit after 2 seconds if something hangs
+        def force_exit():
+            import time
+            time.sleep(2)
+            os._exit(0)
+        
+        threading.Thread(target=force_exit, daemon=True).start()
 
     def _run_tray(self) -> None:
         """Run the tray app in a separate thread."""
@@ -283,15 +320,17 @@ class ClaudeMemoryApp:
         self._tray.run()
 
     def _watchdog(self) -> None:
-        """Watchdog timer to check app health and restart components if needed."""
+        """Watchdog timer to check app health, restart components, and run daily backups."""
+        import time
+        last_backup_check = 0
+        BACKUP_CHECK_INTERVAL = 3600  # Check hourly (backup_database skips if already done today)
+
         while self._running:
             try:
-                import time
                 time.sleep(30)  # Check every 30 seconds
 
                 # Check if keyboard hook is still active
                 try:
-                    # If this succeeds, hooks are working
                     keyboard.is_pressed('shift')
                 except:
                     print("Keyboard hook lost, attempting to re-register...")
@@ -300,6 +339,16 @@ class ClaudeMemoryApp:
                         self._setup_hotkey()
                     except Exception as e:
                         print(f"Failed to restore keyboard hook: {e}")
+
+                # Daily backup check (runs hourly, but backup_database is idempotent per day)
+                now = time.time()
+                if now - last_backup_check > BACKUP_CHECK_INTERVAL:
+                    last_backup_check = now
+                    try:
+                        backup_database()
+                    except Exception as e:
+                        print(f"[Backup] Watchdog backup failed: {e}", flush=True)
+
             except Exception as e:
                 print(f"Watchdog error: {e}")
 
@@ -331,12 +380,23 @@ class ClaudeMemoryApp:
         # Show window on startup
         self._search_window.show()
 
+        # Create floating button (always-on-top, works across all desktops)
+        self._floating_button = create_floating_button(
+            on_click=self._on_search_clicked,
+            on_quit=self._on_quit
+        )
+        self._floating_button.show()
+
         # Setup global hotkey
         self._setup_hotkey()
 
         # Start clipboard watcher
         self._watcher = ClipboardWatcher(on_save=self._on_entry_saved)
         self._watcher.start()
+
+        # Start desktop watcher (Claude Desktop UI Automation)
+        self._desktop_watcher = DesktopWatcher(on_save=self._on_entry_saved)
+        self._desktop_watcher.start()
 
         # Start watchdog thread
         watchdog_thread = threading.Thread(target=self._watchdog, daemon=True)
