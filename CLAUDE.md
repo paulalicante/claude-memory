@@ -7,7 +7,7 @@
 - When switching focus areas
 - At the end of every work session — do not wait to be asked
 
-A Windows desktop application that captures and stores important information from Claude conversations with AI-powered memory management.
+A Windows desktop application ("Otterly Memory") that captures and stores important information from Claude conversations with AI-powered memory management.
 
 ## What It Does
 
@@ -17,11 +17,14 @@ A Windows desktop application that captures and stores important information fro
 - Remove Duplicates feature - merges duplicate entries line-by-line
 - HTML email viewing - preserves formatting from Gmail
 - Runs in system tray with global hotkey access (Ctrl+Shift+M)
+- **Floating "OM" button** — Always-on-top, visible on all virtual desktops, click to open search
 - Single-instance protection prevents multiple copies running
-- Watchdog monitors keyboard hooks and auto-recovers
+- **Watchdog service** — Monitors app health, sends Windows notifications on crash, auto-restarts
 - Exposes MCP server for direct Claude integration
 - HTTP server for browser extension integration
 - PDF import with visual rendering
+- **Observer system** — Daily observations + weekly reflections (Mastra-inspired)
+- **Smart titling** — Auto-saves use topic extraction (file names, tech terms, keywords) instead of generic platform titles
 
 ## Tech Stack
 
@@ -227,11 +230,14 @@ The `vscode-memory-extension/` folder contains a VS Code extension for capturing
 **Features:**
 - **Auto-save** — continuously monitors conversation files and saves new messages automatically
 - **Incremental saves** — only saves new content since last save (Part 1, Part 2, etc.)
+- **Smart titles** — extracts file names, tech terms, and keywords from content for descriptive titles (no "Claude Code:" prefix)
+- **Minimum content threshold** — skips saving entries with < 100 chars to avoid noise
 - **Crash resilience** — state persisted to workspaceState; survives VS Code restarts
-- **Status bar indicator** — shows auto-save status (Auto/Saved/Off/Err), click to toggle
-- **Manual save** — Command Palette: "Save Conversation to Claude Memory" saves full conversation
+- **Status bar indicators** — "CM: Auto" (toggle auto-save) + "CM Save" (one-click manual save)
+- **Keyboard shortcut** — `Ctrl+Shift+Alt+S` for quick manual save
 - Maps workspace path to `~/.claude/projects/` directory automatically
 - Reads `.jsonl` conversation files, extracts user/assistant messages
+- Strips IDE metadata tags (`<ide_opened_file>`) from content before saving
 
 **Settings:**
 - `claudeMemory.autoSave` — enable/disable auto-save (default: true)
