@@ -385,6 +385,15 @@ class AutoSaver {
                 return;
             }
 
+            // Skip saving if content is too short to be useful
+            const totalContentLen = messages.reduce((sum, m) => sum + m.content.length, 0);
+            if (totalContentLen < 100) {
+                // Too little content — accumulate more before saving
+                this.lastByteOffset = newOffset;
+                await this._saveState();
+                return;
+            }
+
             // Track first prompt for title
             if (!this.firstPrompt && firstPrompt) {
                 this.firstPrompt = firstPrompt;

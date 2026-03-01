@@ -380,6 +380,15 @@
     isSaving = true;
 
     const msgCount = messageBuffer.length;
+
+    // Skip saving if content is too short to be useful
+    const totalLen = messageBuffer.reduce((sum, m) => sum + m.content.length, 0);
+    if (totalLen < 100) {
+      console.log(`CM: Skipping save — content too short (${totalLen} chars)`);
+      isSaving = false;
+      return false;
+    }
+
     console.log(`CM: Auto-saving. Buffer has ${msgCount} messages`);
 
     conversationTitle = platform.getTitle(messageBuffer);
