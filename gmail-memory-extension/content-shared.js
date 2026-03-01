@@ -406,10 +406,10 @@
     const topics = extractTopics(messageBuffer);
     let title;
     if (topics) {
-      title = `${platform.name}: ${topics} (Part ${autoSavePartNumber})`;
+      title = `${topics} (Part ${autoSavePartNumber})`;
     } else {
       const titleBase = conversationTitle || 'Conversation';
-      title = `${platform.name}: ${titleBase} (Part ${autoSavePartNumber})`;
+      title = `${titleBase} (Part ${autoSavePartNumber})`;
     }
 
     const memoryData = {

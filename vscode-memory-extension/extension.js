@@ -410,11 +410,11 @@ class AutoSaver {
             const topics = extractTopics(messages);
             let title;
             if (topics) {
-                title = `Claude Code: ${topics} (Part ${this.partNumber})`;
+                title = `${topics} (Part ${this.partNumber})`;
             } else {
                 const titleBase = this.firstPrompt || 'Conversation';
                 const titlePrompt = titleBase.length > 50 ? titleBase.substring(0, 50) + '...' : titleBase;
-                title = `Claude Code: ${titlePrompt} (Part ${this.partNumber})`;
+                title = `${titlePrompt} (Part ${this.partNumber})`;
             }
 
             const config = vscode.workspace.getConfiguration('claudeMemory');

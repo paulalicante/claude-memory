@@ -142,20 +142,16 @@ def retitle_entry(cur, eid, old_title, content):
     time_match = re.search(r'\((\d{1,2}:\d{2})\)', old_title)
     time_suffix = f" ({time_match.group(1)})" if time_match and not part_match else ''
 
-    # Determine prefix: "Chat", "Claude Code", "Claude", etc.
-    prefix_match = re.match(r'^(Chat|Claude Code|Claude|ChatGPT|Gemini|Copilot)', old_title)
-    prefix = prefix_match.group(1) if prefix_match else 'Chat'
-
     # Try topic extraction first
     topics = extract_topics(content)
     if topics:
-        new_title = f"{prefix}: {', '.join(topics)}{part_suffix}{time_suffix}"
+        new_title = f"{', '.join(topics)}{part_suffix}{time_suffix}"
     else:
         # Fall back to first user message
         user_msg = get_first_meaningful_message(content)
         if not user_msg:
             return False
-        new_title = f"{prefix}: {user_msg}{part_suffix}{time_suffix}"
+        new_title = f"{user_msg}{part_suffix}{time_suffix}"
 
     if new_title != old_title:
         cur.execute('UPDATE entries SET title=? WHERE id=?', (new_title, eid))
