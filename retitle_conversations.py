@@ -91,21 +91,45 @@ def extract_topics(content, max_topics=3):
     return topics
 
 
-def get_first_user_message(content, max_len=50):
-    """Extract the first meaningful user message from conversation content."""
-    # Find first **Human:** block
-    match = re.search(r'\*\*Human:\*\*\s*\n(.+?)(?:\n---|\n\*\*)', content, re.DOTALL)
-    if not match:
-        return None
-    msg = match.group(1).strip()
-    # Strip IDE tags
-    msg = re.sub(r'<[^>]+>[^<]*</[^>]+>', '', msg).strip()
-    # Skip very short/generic messages
-    if not msg or len(msg) < 5 or msg.lower() in ('continue', 'yes', 'no', 'ok', 'yes please', 'go ahead'):
-        return None
-    if len(msg) > max_len:
-        msg = msg[:max_len] + '...'
-    return msg
+GENERIC_MESSAGES = {
+    'continue', 'yes', 'no', 'ok', 'yes please', 'go ahead', 'go for it',
+    'sure', 'thanks', 'thank you', 'please', 'do it', 'lets do it',
+    'sounds good', 'perfect', 'great', 'nice', 'cool', 'agreed',
+}
+
+
+def get_first_meaningful_message(content, max_len=50):
+    """Extract the first meaningful message from conversation content.
+    Tries Human first, then Claude's response if Human is generic."""
+    # Try Human first
+    human_match = re.search(r'\*\*Human:\*\*\s*\n(.+?)(?:\n---|\n\*\*)', content, re.DOTALL)
+    if human_match:
+        msg = human_match.group(1).strip()
+        msg = re.sub(r'<[^>]+>[^<]*</[^>]+>', '', msg).strip()
+        if msg and len(msg) >= 8 and msg.lower() not in GENERIC_MESSAGES:
+            if len(msg) > max_len:
+                msg = msg[:max_len] + '...'
+            return msg
+
+    # Human was generic/missing — use first sentence of Claude's response
+    claude_match = re.search(r'\*\*Claude:\*\*\s*\n(.+?)(?:\n---|\n\*\*|\Z)', content, re.DOTALL)
+    if claude_match:
+        msg = claude_match.group(1).strip()
+        # Take first sentence only
+        sentence_end = re.search(r'[.!?\n]', msg)
+        if sentence_end:
+            msg = msg[:sentence_end.start()].strip()
+        msg = re.sub(r'<[^>]+>[^<]*</[^>]+>', '', msg).strip()
+        # Remove leading filler words
+        msg = re.sub(r'^(Done|Good|Great|OK|Sure|Right|Yes|Excellent|Alright|Perfect)[.,!]?\s*', '', msg).strip()
+        # Remove leading "Now " or "Let me " to get to the meat
+        msg = re.sub(r'^(Now|Now,|Let me|I\'ll|I will|I can see|I see)\s+', '', msg).strip()
+        if msg and len(msg) >= 8:
+            if len(msg) > max_len:
+                msg = msg[:max_len] + '...'
+            return msg
+
+    return None
 
 
 def retitle_entry(cur, eid, old_title, content):
@@ -128,7 +152,7 @@ def retitle_entry(cur, eid, old_title, content):
         new_title = f"{prefix}: {', '.join(topics)}{part_suffix}{time_suffix}"
     else:
         # Fall back to first user message
-        user_msg = get_first_user_message(content)
+        user_msg = get_first_meaningful_message(content)
         if not user_msg:
             return False
         new_title = f"{prefix}: {user_msg}{part_suffix}{time_suffix}"
