@@ -121,14 +121,17 @@ function parseMessages(lines) {
             content = textParts.join('\n');
         }
 
-        if (!content.trim()) continue;
+        // Strip IDE metadata tags (e.g., <ide_opened_file>...</ide_opened_file>)
+        content = content.replace(/<[^>]+>[^<]*<\/[^>]+>/g, '').trim();
 
-        // Track first user prompt for title
-        if (msg.role === 'user' && !firstPrompt) {
-            firstPrompt = content.trim().substring(0, 80);
+        if (!content) continue;
+
+        // Track first user prompt for title (skip very short/empty prompts)
+        if (msg.role === 'user' && !firstPrompt && content.length > 5) {
+            firstPrompt = content.substring(0, 80);
         }
 
-        messages.push({ role: msg.role, content: content.trim() });
+        messages.push({ role: msg.role, content });
     }
 
     return { messages, firstPrompt };
@@ -146,48 +149,64 @@ function formatMessages(messages) {
 
 /**
  * Extract key topics from conversation content for a descriptive title.
- * Looks for: file names, function names, error keywords, action verbs.
+ * Looks for: file names, function names, abbreviations, tech terms, action verbs.
  */
 function extractTopics(messages, maxTopics = 3) {
-    const text = messages.map(m => m.content).join(' ');
-    const topics = new Set();
+    // Strip IDE tags from text before analysis
+    const text = messages.map(m => m.content).join(' ').replace(/<[^>]+>[^<]*<\/[^>]+>/g, '');
+    const topics = [];
+    const seen = new Set();
 
-    // Extract file names (e.g., main.py, extension.js, CLAUDE.md)
-    const filePattern = /\b([a-zA-Z_][\w-]*\.(py|js|ts|tsx|jsx|json|md|html|css|bat|sh|yaml|yml|toml|sql))\b/gi;
-    let match;
-    while ((match = filePattern.exec(text)) !== null) {
-        topics.add(match[1]);
-        if (topics.size >= maxTopics * 2) break;
-    }
-
-    // Extract function/method names (e.g., def foo, function bar, async baz)
-    const funcPattern = /\b(?:def|function|async|class)\s+([a-zA-Z_]\w+)/gi;
-    while ((match = funcPattern.exec(text)) !== null) {
-        topics.add(match[1]);
-        if (topics.size >= maxTopics * 2) break;
-    }
-
-    // Extract key action words and concepts
-    const keywords = [
-        'commit', 'push', 'merge', 'deploy', 'fix', 'bug', 'error', 'crash',
-        'install', 'update', 'upgrade', 'test', 'build', 'run', 'start', 'stop',
-        'create', 'delete', 'add', 'remove', 'refactor', 'optimize',
-        'database', 'api', 'server', 'client', 'frontend', 'backend',
-        'watchdog', 'observer', 'floating', 'button', 'window', 'ui',
-        'git', 'npm', 'pip', 'docker', 'kubernetes'
-    ];
-
-    const lowerText = text.toLowerCase();
-    for (const kw of keywords) {
-        if (lowerText.includes(kw)) {
-            topics.add(kw);
-            if (topics.size >= maxTopics * 2) break;
+    function addTopic(t) {
+        const key = t.toLowerCase();
+        if (!seen.has(key)) {
+            seen.add(key);
+            topics.push(t);
         }
     }
 
-    // Convert to array and take top N
-    const topicArray = Array.from(topics).slice(0, maxTopics);
-    return topicArray.length > 0 ? topicArray.join(', ') : null;
+    // 1. File names (highest priority)
+    const filePattern = /\b([a-zA-Z_][\w-]*\.(py|js|ts|tsx|jsx|json|md|html|css|bat|sh|yaml|yml|toml|sql))\b/gi;
+    let match;
+    while ((match = filePattern.exec(text)) !== null) {
+        addTopic(match[1]);
+        if (topics.length >= maxTopics) return topics.join(', ');
+    }
+
+    // 2. Abbreviations and tech terms (e.g., MSIX, API, CORS, OAuth, PyQt6)
+    const abbrPattern = /\b([A-Z][A-Z0-9]{2,}[a-z]*|[A-Z][a-z]+[A-Z]\w*)\b/g;
+    const skipAbbrs = new Set(['THE', 'AND', 'FOR', 'BUT', 'NOT', 'YOU', 'ALL', 'CAN', 'HAS', 'HER', 'WAS', 'ONE', 'OUR', 'OUT', 'ARE', 'HIS', 'HOW', 'ITS', 'LET', 'MAY', 'NEW', 'NOW', 'OLD', 'SEE', 'WAY', 'WHO', 'DID', 'GET', 'GOT', 'HAD', 'HIM', 'USE', 'WILL', 'BEEN', 'EACH', 'MAKE', 'LIKE', 'LONG', 'LOOK', 'MANY', 'SOME', 'THEM', 'THEN', 'THIS', 'WHAT', 'WITH', 'HAVE', 'FROM', 'THAT', 'THEY', 'BEEN', 'SAID', 'JUST', 'ALSO', 'INTO', 'OVER', 'SUCH', 'TAKE', 'THAN', 'VERY', 'WHEN', 'COME', 'COULD', 'ABOUT', 'AFTER', 'BACK', 'ONLY', 'DONE', 'HERE', 'MUST', 'SURE', 'YEAH', 'DOES', 'STILL', 'WELL', 'DONT', 'WANT', 'RIGHT', 'KNOW', 'NEED']);
+    while ((match = abbrPattern.exec(text)) !== null) {
+        const term = match[1];
+        if (!skipAbbrs.has(term.toUpperCase()) && term.length >= 3) {
+            addTopic(term);
+            if (topics.length >= maxTopics) return topics.join(', ');
+        }
+    }
+
+    // 3. Function/method names
+    const funcPattern = /\b(?:def|function|async|class)\s+([a-zA-Z_]\w+)/gi;
+    while ((match = funcPattern.exec(text)) !== null) {
+        addTopic(match[1]);
+        if (topics.length >= maxTopics) return topics.join(', ');
+    }
+
+    // 4. Action keywords (lowest priority)
+    const keywords = [
+        'commit', 'push', 'merge', 'deploy', 'fix', 'bug', 'error', 'crash',
+        'install', 'update', 'upgrade', 'test', 'build', 'refactor', 'optimize',
+        'database', 'api', 'server', 'login', 'auth', 'payment',
+        'debug', 'config', 'setup', 'migrate', 'docker', 'git'
+    ];
+    const lowerText = text.toLowerCase();
+    for (const kw of keywords) {
+        if (lowerText.includes(kw)) {
+            addTopic(kw);
+            if (topics.length >= maxTopics) return topics.join(', ');
+        }
+    }
+
+    return topics.length > 0 ? topics.join(', ') : null;
 }
 
 /**
