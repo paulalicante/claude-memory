@@ -83,7 +83,7 @@ def extract_topics(content, max_topics=3):
     ]
     lower = content.lower()
     for kw in keywords:
-        if kw in lower:
+        if re.search(r'\b' + kw + r'\b', lower):
             add_topic(kw)
             if len(topics) >= max_topics:
                 return topics

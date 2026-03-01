@@ -200,7 +200,8 @@ function extractTopics(messages, maxTopics = 3) {
     ];
     const lowerText = text.toLowerCase();
     for (const kw of keywords) {
-        if (lowerText.includes(kw)) {
+        const regex = new RegExp(`\\b${kw}\\b`);
+        if (regex.test(lowerText)) {
             addTopic(kw);
             if (topics.length >= maxTopics) return topics.join(', ');
         }
