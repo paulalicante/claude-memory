@@ -16,7 +16,8 @@
   const CONFIG = {
     maxBufferChars: 15000,
     autoSaveThreshold: 0.9,
-    checkInterval: 2000
+    checkInterval: 2000,
+    autoSaveIntervalMs: 60000
   };
 
   // =============================================
@@ -33,8 +34,12 @@
 
   let currentUrl = window.location.href;
   let messageCheckInterval = null;
+  let autoSaveInterval = null;
   let conversationObserver = null;
   let isInitializing = false;
+  let isSaving = false;
+  let autoSavePartNumber = 0;
+  let lastAutoSaveCount = 0;
 
   // =============================================
   // Content hashing for deduplication
@@ -42,6 +47,47 @@
   function getContentHash(role, content) {
     const normalized = content.replace(/\s+/g, ' ').toLowerCase().substring(0, 100);
     return `${role}:${normalized}`;
+  }
+
+  // =============================================
+  // Topic extraction for descriptive titles
+  // =============================================
+  function extractTopics(messages, maxTopics = 3) {
+    const text = messages.map(m => m.content).join(' ');
+    const topics = new Set();
+
+    // Extract file names
+    const filePattern = /\b([a-zA-Z_][\w-]*\.(py|js|ts|tsx|jsx|json|md|html|css|bat|sh|yaml|yml|toml|sql))\b/gi;
+    let match;
+    while ((match = filePattern.exec(text)) !== null) {
+      topics.add(match[1]);
+      if (topics.size >= maxTopics * 2) break;
+    }
+
+    // Extract function/method names
+    const funcPattern = /\b(?:def|function|async|class)\s+([a-zA-Z_]\w+)/gi;
+    while ((match = funcPattern.exec(text)) !== null) {
+      topics.add(match[1]);
+      if (topics.size >= maxTopics * 2) break;
+    }
+
+    // Extract key action words
+    const keywords = [
+      'commit', 'push', 'merge', 'deploy', 'fix', 'bug', 'error', 'crash',
+      'install', 'update', 'test', 'build', 'refactor', 'optimize',
+      'database', 'api', 'server', 'login', 'auth', 'payment',
+      'debug', 'config', 'setup', 'migrate', 'docker', 'git'
+    ];
+    const lowerText = text.toLowerCase();
+    for (const kw of keywords) {
+      if (lowerText.includes(kw)) {
+        topics.add(kw);
+        if (topics.size >= maxTopics * 2) break;
+      }
+    }
+
+    const topicArray = Array.from(topics).slice(0, maxTopics);
+    return topicArray.length > 0 ? topicArray.join(', ') : null;
   }
 
   // =============================================
@@ -212,24 +258,13 @@
   }
 
   // =============================================
-  // Floating save button
+  // Status dot indicator
   // =============================================
   function createFloatingButton() {
     if (floatingButton) return;
 
     floatingButton = document.createElement('div');
     floatingButton.id = 'cm-floating-btn';
-    floatingButton.innerHTML = `
-      <div class="cm-btn-content">
-        <button class="cm-save-btn" title="Save conversation buffer to Claude Memory">
-          <span class="cm-icon">CM</span>
-          <span class="cm-count">0</span>
-        </button>
-        <div class="cm-progress">
-          <div class="cm-progress-bar"></div>
-        </div>
-      </div>
-    `;
 
     // Inject styles once
     if (!document.getElementById('cm-shared-styles')) {
@@ -238,72 +273,18 @@
       style.textContent = `
         #cm-floating-btn {
           position: fixed;
-          bottom: 100px;
-          right: 24px;
+          bottom: 12px;
+          right: 12px;
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: #4285f4;
           z-index: 999999;
-          animation: cm-slide-in 0.3s ease-out;
+          opacity: 0.6;
+          transition: background 0.3s ease, opacity 0.3s ease;
         }
-        @keyframes cm-slide-in {
-          from { transform: translateY(100%); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-        .cm-btn-content {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          background: #ffffff;
-          border-radius: 12px;
-          box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
-          padding: 8px;
-          border: 1px solid #e0e0e0;
-          min-width: 60px;
-        }
-        .cm-save-btn {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 4px;
-          padding: 8px 12px;
-          background: #34a853;
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        .cm-save-btn:hover {
-          filter: brightness(0.9);
-          transform: scale(1.05);
-        }
-        .cm-save-btn:disabled {
-          opacity: 0.7;
-          cursor: wait;
-        }
-        .cm-icon {
-          font-weight: 700;
-          font-size: 14px;
-        }
-        .cm-count {
-          font-size: 11px;
-          opacity: 0.9;
-        }
-        .cm-progress {
-          width: 100%;
-          height: 4px;
-          background: #e0e0e0;
-          border-radius: 2px;
-          margin-top: 6px;
-          overflow: hidden;
-        }
-        .cm-progress-bar {
-          height: 100%;
-          background: #34a853;
-          border-radius: 2px;
-          transition: width 0.3s ease, background-color 0.3s ease;
-          width: 0%;
+        #cm-floating-btn:hover {
+          opacity: 1;
         }
         .cm-toast {
           position: fixed;
@@ -335,9 +316,6 @@
       document.head.appendChild(style);
     }
 
-    const saveBtn = floatingButton.querySelector('.cm-save-btn');
-    saveBtn.addEventListener('click', handleSave);
-
     document.body.appendChild(floatingButton);
     updateButtonState();
   }
@@ -345,21 +323,14 @@
   function updateButtonState() {
     if (!floatingButton) return;
 
-    const btn = floatingButton.querySelector('.cm-save-btn');
-    const countEl = floatingButton.querySelector('.cm-count');
-    const progressBar = floatingButton.querySelector('.cm-progress-bar');
-
-    const color = getBufferColor();
-    const percent = getBufferFillPercent();
-
-    btn.style.background = color;
-    countEl.textContent = messageBuffer.length + ' msgs';
-    progressBar.style.width = percent + '%';
-    progressBar.style.background = color;
-
-    btn.title = `Buffer: ${totalBufferChars.toLocaleString()} / ${CONFIG.maxBufferChars.toLocaleString()} chars\n` +
-                `${messageBuffer.length} messages\n` +
-                `Click to save to Claude Memory`;
+    // Blue = connected & saved, green = buffering new messages, grey = disconnected/error
+    if (messageBuffer.length === 0) {
+      floatingButton.style.background = '#4285f4';
+      floatingButton.title = `CM: Auto-saving (${lastAutoSaveCount} msgs saved)`;
+    } else {
+      floatingButton.style.background = '#34a853';
+      floatingButton.title = `CM: ${messageBuffer.length} new messages buffered`;
+    }
   }
 
   // =============================================
@@ -380,27 +351,20 @@
   // =============================================
   // Save flow
   // =============================================
-  function promptToSave() {
-    showToast('Buffer nearly full! Click CM to save conversation.', 'info');
-  }
 
-  async function handleSave() {
-    console.log('CM: Save clicked. Buffer has', messageBuffer.length, 'messages');
-    messageBuffer.forEach((msg, i) => {
-      console.log(`CM: Message ${i}: role=${msg.role}, length=${msg.content.length}, preview="${msg.content.substring(0, 80)}..."`);
-    });
+  /**
+   * Save current buffer to Claude Memory. Always silent (auto-save only).
+   * @returns {boolean} - Whether save succeeded
+   */
+  async function doSave() {
+    if (isSaving || messageBuffer.length === 0) return false;
+    isSaving = true;
 
-    if (messageBuffer.length === 0) {
-      showToast('Nothing to save yet', 'info');
-      return;
-    }
-
-    const saveBtn = floatingButton.querySelector('.cm-save-btn');
-    saveBtn.disabled = true;
+    const msgCount = messageBuffer.length;
+    console.log(`CM: Auto-saving. Buffer has ${msgCount} messages`);
 
     conversationTitle = platform.getTitle(messageBuffer);
 
-    // Format buffer using platform-specific role labels
     const userLabel = platform.roleLabels.user;
     const assistantLabel = platform.roleLabels.assistant;
 
@@ -409,52 +373,71 @@
       return `**${prefix}:**\n${msg.content}`;
     }).join('\n\n---\n\n');
 
-    console.log('CM: Content to save (length=' + content.length + '):', content.substring(0, 500) + '...');
+    autoSavePartNumber++;
+    // Try topic extraction first, fall back to platform title
+    const topics = extractTopics(messageBuffer);
+    let title;
+    if (topics) {
+      title = `${platform.name}: ${topics} (Part ${autoSavePartNumber})`;
+    } else {
+      const titleBase = conversationTitle || 'Conversation';
+      title = `${platform.name}: ${titleBase} (Part ${autoSavePartNumber})`;
+    }
 
     const memoryData = {
-      title: 'Chat: ' + conversationTitle,
+      title: title,
       content: content,
       category: 'conversation',
-      tags: platform.tags,
+      tags: platform.tags + ', auto-save',
       metadata: {
         source: platform.source,
         platform: platform.name,
-        messageCount: messageBuffer.length,
+        messageCount: msgCount,
+        partNumber: autoSavePartNumber,
         url: window.location.href,
         date: new Date().toISOString()
       }
     };
 
+    let success = false;
     try {
       const response = await chrome.runtime.sendMessage({
         action: 'saveMemory',
         data: memoryData
       });
 
-      console.log('CM: Server response:', response);
-
       if (response.success) {
-        console.log('CM: Successfully saved! Memory ID:', response.id);
-        showToast(`Saved ${messageBuffer.length} messages to Memory!`, 'success');
+        console.log(`CM: Saved Part ${autoSavePartNumber} (${msgCount} messages)`);
 
         messageBuffer.forEach(msg => {
           const hash = getContentHash(msg.role, msg.content);
           savedContentHashes.add(hash);
         });
-        console.log(`CM: Marked ${messageBuffer.length} messages as saved (${savedContentHashes.size} total)`);
 
+        lastAutoSaveCount += msgCount;
         messageBuffer = [];
         totalBufferChars = 0;
         updateButtonState();
+        success = true;
       } else {
-        showToast('Failed: ' + (response.error || 'Unknown error'), 'error');
+        console.error('CM: Save failed:', response.error);
+        autoSavePartNumber--;
+        if (floatingButton) floatingButton.style.background = '#9e9e9e';
       }
     } catch (e) {
-      showToast('Could not connect to Claude Memory. Is the app running?', 'error');
       console.error('CM: Save error:', e);
+      autoSavePartNumber--;
+      if (floatingButton) floatingButton.style.background = '#9e9e9e';
     }
 
-    saveBtn.disabled = false;
+    isSaving = false;
+    return success;
+  }
+
+  /** Auto-save — triggered by timer or buffer threshold. */
+  async function autoSave() {
+    if (messageBuffer.length === 0) return;
+    await doSave();
   }
 
   // =============================================
@@ -503,8 +486,10 @@
     if (addedCount > 0) {
       updateButtonState();
 
+      // Auto-save when buffer hits threshold instead of just prompting
       if (totalBufferChars >= CONFIG.maxBufferChars * CONFIG.autoSaveThreshold) {
-        promptToSave();
+        console.log('CM: Buffer threshold reached, auto-saving...');
+        autoSave();
       }
     }
 
@@ -530,6 +515,10 @@
 
   function cleanupFull() {
     cleanupUI();
+    if (autoSaveInterval) {
+      clearInterval(autoSaveInterval);
+      autoSaveInterval = null;
+    }
     messageBuffer = [];
     totalBufferChars = 0;
     savedContentHashes.clear();
@@ -566,6 +555,11 @@
         if (messageCheckInterval) clearInterval(messageCheckInterval);
         messageCheckInterval = setInterval(processNewMessages, CONFIG.checkInterval);
 
+        // Start auto-save timer
+        if (autoSaveInterval) clearInterval(autoSaveInterval);
+        autoSaveInterval = setInterval(autoSave, CONFIG.autoSaveIntervalMs);
+        console.log(`CM: Auto-save timer started (every ${CONFIG.autoSaveIntervalMs / 1000}s)`);
+
         if (conversationObserver) conversationObserver.disconnect();
         conversationObserver = new MutationObserver((mutations) => {
           const hasRelevantChanges = mutations.some(m =>
@@ -594,11 +588,10 @@
     }, 1000);
   }
 
-  function ensureButtonExists() {
+  function ensureStatusDot() {
     if (document.getElementById('cm-floating-btn')) return;
     floatingButton = null;
     createFloatingButton();
-    console.log('CM: Recreated missing button');
   }
 
   function setupNavigationDetection() {
@@ -606,19 +599,42 @@
       if (isInitializing) return;
 
       if (window.location.href !== currentUrl) {
-        console.log('CM: URL changed, reinitializing...', currentUrl, '->', window.location.href);
-        currentUrl = window.location.href;
-        setTimeout(() => startInit(true), 1000);
+        console.log('CM: URL changed, saving before reset...', currentUrl, '->', window.location.href);
+        // Save any buffered messages before switching conversations
+        if (messageBuffer.length > 0) {
+          autoSave().then(() => {
+            currentUrl = window.location.href;
+            autoSavePartNumber = 0;
+            lastAutoSaveCount = 0;
+            setTimeout(() => startInit(true), 1000);
+          });
+        } else {
+          currentUrl = window.location.href;
+          autoSavePartNumber = 0;
+          lastAutoSaveCount = 0;
+          setTimeout(() => startInit(true), 1000);
+        }
         return;
       }
 
-      ensureButtonExists();
+      ensureStatusDot();
     }, 2000);
 
     window.addEventListener('popstate', () => {
-      console.log('CM: popstate detected, reinitializing...');
-      currentUrl = window.location.href;
-      setTimeout(() => startInit(true), 1000);
+      console.log('CM: popstate detected, saving before reset...');
+      if (messageBuffer.length > 0) {
+        autoSave().then(() => {
+          currentUrl = window.location.href;
+          autoSavePartNumber = 0;
+          lastAutoSaveCount = 0;
+          setTimeout(() => startInit(true), 1000);
+        });
+      } else {
+        currentUrl = window.location.href;
+        autoSavePartNumber = 0;
+        lastAutoSaveCount = 0;
+        setTimeout(() => startInit(true), 1000);
+      }
     });
   }
 

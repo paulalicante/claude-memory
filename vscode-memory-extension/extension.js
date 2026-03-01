@@ -145,6 +145,52 @@ function formatMessages(messages) {
 }
 
 /**
+ * Extract key topics from conversation content for a descriptive title.
+ * Looks for: file names, function names, error keywords, action verbs.
+ */
+function extractTopics(messages, maxTopics = 3) {
+    const text = messages.map(m => m.content).join(' ');
+    const topics = new Set();
+
+    // Extract file names (e.g., main.py, extension.js, CLAUDE.md)
+    const filePattern = /\b([a-zA-Z_][\w-]*\.(py|js|ts|tsx|jsx|json|md|html|css|bat|sh|yaml|yml|toml|sql))\b/gi;
+    let match;
+    while ((match = filePattern.exec(text)) !== null) {
+        topics.add(match[1]);
+        if (topics.size >= maxTopics * 2) break;
+    }
+
+    // Extract function/method names (e.g., def foo, function bar, async baz)
+    const funcPattern = /\b(?:def|function|async|class)\s+([a-zA-Z_]\w+)/gi;
+    while ((match = funcPattern.exec(text)) !== null) {
+        topics.add(match[1]);
+        if (topics.size >= maxTopics * 2) break;
+    }
+
+    // Extract key action words and concepts
+    const keywords = [
+        'commit', 'push', 'merge', 'deploy', 'fix', 'bug', 'error', 'crash',
+        'install', 'update', 'upgrade', 'test', 'build', 'run', 'start', 'stop',
+        'create', 'delete', 'add', 'remove', 'refactor', 'optimize',
+        'database', 'api', 'server', 'client', 'frontend', 'backend',
+        'watchdog', 'observer', 'floating', 'button', 'window', 'ui',
+        'git', 'npm', 'pip', 'docker', 'kubernetes'
+    ];
+
+    const lowerText = text.toLowerCase();
+    for (const kw of keywords) {
+        if (lowerText.includes(kw)) {
+            topics.add(kw);
+            if (topics.size >= maxTopics * 2) break;
+        }
+    }
+
+    // Convert to array and take top N
+    const topicArray = Array.from(topics).slice(0, maxTopics);
+    return topicArray.length > 0 ? topicArray.join(', ') : null;
+}
+
+/**
  * Send a memory entry to the Claude Memory HTTP server.
  */
 function sendToMemoryServer(memoryEntry, port) {
@@ -332,9 +378,16 @@ class AutoSaver {
             this.partNumber++;
             const formattedText = formatMessages(messages);
 
-            const titleBase = this.firstPrompt || 'Conversation';
-            const titlePrompt = titleBase.length > 50 ? titleBase.substring(0, 50) + '...' : titleBase;
-            const title = `Claude Code: ${titlePrompt} (Part ${this.partNumber})`;
+            // Build descriptive title from topics in this batch
+            const topics = extractTopics(messages);
+            let title;
+            if (topics) {
+                title = `Claude Code: ${topics} (Part ${this.partNumber})`;
+            } else {
+                const titleBase = this.firstPrompt || 'Conversation';
+                const titlePrompt = titleBase.length > 50 ? titleBase.substring(0, 50) + '...' : titleBase;
+                title = `Claude Code: ${titlePrompt} (Part ${this.partNumber})`;
+            }
 
             const config = vscode.workspace.getConfiguration('claudeMemory');
             const port = config.get('serverPort', 8765);
