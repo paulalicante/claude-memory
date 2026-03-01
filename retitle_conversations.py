@@ -38,7 +38,7 @@ def extract_topics(content, max_topics=3):
             topics.append(t)
 
     # 1. File names (highest priority)
-    for m in re.finditer(r'\b([a-zA-Z_][\w-]*\.(py|js|ts|tsx|jsx|json|md|html|css|bat|sh|yaml|yml|toml|sql))\b', content):
+    for m in re.finditer(r'\b([a-zA-Z_][\w-]*\.(py|js|ts|tsx|jsx|json|md|html|css|bat|sh|yaml|yml|toml|sql|dart|swift|kt|rb|go|rs|vue|svelte))\b', content):
         add_topic(m.group(1))
         if len(topics) >= max_topics:
             return topics
@@ -51,18 +51,35 @@ def extract_topics(content, max_topics=3):
             if len(topics) >= max_topics:
                 return topics
 
-    # 3. Function/class names
+    # 3. Function/method names — both declarations AND calls like _get_zoom()
     for m in re.finditer(r'\b(?:def|function|async|class)\s+([a-zA-Z_]\w+)', content):
         add_topic(m.group(1))
         if len(topics) >= max_topics:
             return topics
+    # Method calls with underscores (likely meaningful): _apply_zoom(), get_config()
+    for m in re.finditer(r'\b([a-z][a-z_]+[a-z])\s*\(', content):
+        name = m.group(1)
+        if '_' in name and len(name) > 5:
+            add_topic(name + '()')
+            if len(topics) >= max_topics:
+                return topics
 
-    # 4. Action keywords (lowest priority)
+    # 4. Backtick-quoted terms (often important: `MSIX`, `zoom`, `supabase`)
+    for m in re.finditer(r'`([^`]{2,30})`', content):
+        term = m.group(1).strip()
+        if term and not term.startswith(('http', '//', '#')) and ' ' not in term:
+            add_topic(term)
+            if len(topics) >= max_topics:
+                return topics
+
+    # 5. Action keywords (lowest priority)
     keywords = [
         'commit', 'push', 'merge', 'deploy', 'fix', 'bug', 'error', 'crash',
         'install', 'update', 'test', 'build', 'refactor', 'optimize',
         'database', 'api', 'server', 'login', 'auth', 'payment',
-        'debug', 'config', 'setup', 'migrate', 'docker', 'git'
+        'debug', 'config', 'setup', 'migrate', 'docker', 'git',
+        'zoom', 'blur', 'animation', 'recording', 'export', 'render',
+        'supabase', 'stripe', 'firebase', 'flutter', 'react',
     ]
     lower = content.lower()
     for kw in keywords:
@@ -74,16 +91,68 @@ def extract_topics(content, max_topics=3):
     return topics
 
 
+def get_first_user_message(content, max_len=50):
+    """Extract the first meaningful user message from conversation content."""
+    # Find first **Human:** block
+    match = re.search(r'\*\*Human:\*\*\s*\n(.+?)(?:\n---|\n\*\*)', content, re.DOTALL)
+    if not match:
+        return None
+    msg = match.group(1).strip()
+    # Strip IDE tags
+    msg = re.sub(r'<[^>]+>[^<]*</[^>]+>', '', msg).strip()
+    # Skip very short/generic messages
+    if not msg or len(msg) < 5 or msg.lower() in ('continue', 'yes', 'no', 'ok', 'yes please', 'go ahead'):
+        return None
+    if len(msg) > max_len:
+        msg = msg[:max_len] + '...'
+    return msg
+
+
+def retitle_entry(cur, eid, old_title, content):
+    """Try to retitle a single entry. Returns True if updated."""
+    # Extract part number if present
+    part_match = re.search(r'\(Part (\d+)\)', old_title)
+    part_suffix = f" (Part {part_match.group(1)})" if part_match else ''
+
+    # Extract time if present, e.g., "(14:08)"
+    time_match = re.search(r'\((\d{1,2}:\d{2})\)', old_title)
+    time_suffix = f" ({time_match.group(1)})" if time_match and not part_match else ''
+
+    # Determine prefix: "Chat", "Claude Code", "Claude", etc.
+    prefix_match = re.match(r'^(Chat|Claude Code|Claude|ChatGPT|Gemini|Copilot)', old_title)
+    prefix = prefix_match.group(1) if prefix_match else 'Chat'
+
+    # Try topic extraction first
+    topics = extract_topics(content)
+    if topics:
+        new_title = f"{prefix}: {', '.join(topics)}{part_suffix}{time_suffix}"
+    else:
+        # Fall back to first user message
+        user_msg = get_first_user_message(content)
+        if not user_msg:
+            return False
+        new_title = f"{prefix}: {user_msg}{part_suffix}{time_suffix}"
+
+    if new_title != old_title:
+        cur.execute('UPDATE entries SET title=? WHERE id=?', (new_title, eid))
+        try:
+            cur.execute('UPDATE entries_fts SET title=? WHERE rowid=?', (new_title, eid))
+        except Exception:
+            pass
+        return True
+    return False
+
+
 def main():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # Get all conversation entries with "Part N" in title
-    cur.execute("SELECT id, title, content FROM entries WHERE category='conversation' AND title LIKE '%Part %'")
+    # Get ALL conversation entries (not just "Part N" ones)
+    cur.execute("SELECT id, title, content FROM entries WHERE category='conversation'")
     rows = cur.fetchall()
 
-    print(f"Found {len(rows)} entries to process...")
+    print(f"Found {len(rows)} conversation entries to process...")
 
     updated = 0
     skipped = 0
@@ -93,32 +162,10 @@ def main():
         old_title = row['title']
         content = row['content'] or ''
 
-        # Extract part number
-        part_match = re.search(r'\(Part (\d+)\)', old_title)
-        if not part_match:
-            skipped += 1
-            continue
-        part_num = part_match.group(1)
-
-        # Extract platform prefix
-        prefix_match = re.match(r'^([^:]+):', old_title)
-        prefix = prefix_match.group(1) if prefix_match else 'Chat'
-
-        topics = extract_topics(content)
-        if not topics:
-            skipped += 1
-            continue
-
-        new_title = f"{prefix}: {', '.join(topics)} (Part {part_num})"
-
-        if new_title != old_title:
-            cur.execute('UPDATE entries SET title=? WHERE id=?', (new_title, eid))
-            # Update FTS index
-            try:
-                cur.execute('UPDATE entries_fts SET title=? WHERE rowid=?', (new_title, eid))
-            except Exception:
-                pass  # FTS update might fail if schema differs
+        if retitle_entry(cur, eid, old_title, content):
             updated += 1
+        else:
+            skipped += 1
 
     conn.commit()
     conn.close()
